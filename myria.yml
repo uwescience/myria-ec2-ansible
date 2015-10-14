@@ -89,7 +89,7 @@
         Name: "{{ lookup('env', 'USER') }}-{{ key_name }}"
     with_items: ec2_volumes.results
 
-  - name: Create new ssh key-pair#generate a keylocally - this  will generate an error(igonored) if key exists... 
+  - name: Create new ssh key-pair#generate a keylocally - this  will generate an error(ignored) if key exists... 
     shell: ssh-keygen -q -t rsa -N "" 
                -f {{ new_priv_key }}
     delegate_to: localhost
@@ -112,7 +112,7 @@
 
 #Prepare worker environment
 - name: Configure workers
-  hosts: nodes    #should this be nodes?
+  hosts: nodes    
   remote_user: ubuntu
   sudo: yes
   gather_facts: false
@@ -123,14 +123,14 @@
     database_password: uwdb # TODO: Fix me :(
     postgres_version: 9.3
     new_pub_key: ~/.ssh/id_rsa.pub
-    myria_path: /mnt/myria #TODO duplicated below
+    myria_path: /mnt/myria #TODO duplicated in the coordinator section 
 
   tasks:
   - name: Add key to authorized key #use shell rather than auth key module.
     shell: cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
     sudo: no
 
-  - name: disable ssh host key checking # this is excessive, this shoudl be restricted to the list of IPs deployed
+  - name: disable ssh host key checking # this is excessive, fix this to be restricted to the list of IPs deployed
     shell: (echo Host *; echo StrictHostKeyChecking no; echo UserKnownHostsFile=/dev/null) >> /etc/ssh/ssh_config
     sudo: yes
 
@@ -220,7 +220,7 @@
         chdir: "{{myria_path}}/myriadeploy"
         creates: "{{myria_path}}/myria/master"
 
-    - name: Launch cluster
+    - name: Launch cluster # this is failing right now, need to puch some holes in the filewall so master-worker can talk
       shell: "./launch_cluster.sh deployment.ec2.config \
                --clean-catalog"
       sudo: no
