@@ -1,11 +1,15 @@
 ---
 #installing myria in ec2 with ansible
+#install ansible on a local( controller machine), replace key name with your ec2 key
+#
+#ansible-playbook myria.yml "-e KEY_NAME=parmita-keypair" 
+# 
 
 - name: Create AWS resources
   hosts: localhost
   gather_facts: False
   vars:
-    key_name: parmita-keypair
+    key_name: "{{ KEY_NAME|default(defaultkey) }}"
     instance_type: m1.small
     instance_count: 2
     security_group: default
@@ -73,7 +77,7 @@
       volume_size: 20
       instance: "{{item.id}}"
       region: "{{region}}"
-      with_items: ec2.instances
+    with_items: ec2.instances
     register: ec2_volumes
 
   - name: Add tags to volumes
@@ -82,8 +86,8 @@
       region: "{{region}}"
       state: present
       tags:
-        Name: "{{ lookup('env', 'USER') }}-{{ keypair }}"
-      with_items: ec2_volumes.results
+        Name: "{{ lookup('env', 'USER') }}-{{ key_name }}"
+    with_items: ec2_volumes.results
 
   - name: Create new ssh key-pair#generate a keylocally - this  will generate an error(igonored) if key exists... 
     shell: ssh-keygen -q -t rsa -N "" 
@@ -217,7 +221,11 @@
         creates: "{{myria_path}}/myria/master"
 
     - name: Launch cluster
-      shell: "./launch_cluster deployment.ec2.config"
+      shell: "./launch_cluster.sh deployment.ec2.config \
+               --clean-catalog"
       sudo: no
       args:
         chdir: "{{myria_path}}/myriadeploy"
+
+    - name: list the name of master for ssh purposes.
+      debug: msg="ssh to master by using public ip - {{play_hosts}}, and user - ubuntu"
