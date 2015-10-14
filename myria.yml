@@ -1,0 +1,190 @@
+---
+# ansible-playbook myria.yml --private-key=/path/to/ec2/private/key
+#
+# The playbook operates on the local (Ansible control) machine.
+- name: Stage instance(s)
+  hosts: local
+  connection: local
+  remote_user: root
+  gather_facts: false
+
+  vars:
+      keypair: parmitaKey
+      instance_count: 2
+      instance_type: m1.small #t2.small
+      security_group: default
+      image: ami-8f1da5e4 #ami-38b99850
+      region: us-east-1
+      wait_timeout: 600
+
+  tasks:
+    - name: Launch instance
+      ec2:
+        keypair: "{{keypair}}"
+        group: "{{security_group}}"
+        instance_type: "{{instance_type}}"
+        image: "{{image}}"
+        wait: true
+        wait_timeout: "{{wait_timeout}}"
+        count: "{{instance_count}}"
+        region: "{{region}}"
+        instance_tags:
+          Name: "{{ lookup('env', 'USER') }}-{{ keypair }}"
+      register: ec2
+
+    - name: Add new instances to host group
+      add_host: hostname={{item.public_ip}} groupname=nodes
+      with_items: ec2.instances
+
+    - name: Add first instance to coordinators group
+      add_host: hostname={{item.public_ip}} groupname=coordinators
+      with_items: ec2.instances[:1]
+
+    - name: Add remaining instance to workers group
+      add_host: hostname={{item.public_ip}} groupname=workers
+      with_items: ec2.instances
+
+    - add_host: hostname={{item.dns_name}} groupname=coordinator_name
+      with_items: ec2.instances[:1]
+    - add_host: hostname={{item.dns_name}} groupname=worker_names
+      with_items: ec2.instances[1:]
+
+    - name: Wait for the instances to boot by checking the ssh port
+      wait_for: host={{item.public_dns_name}} port=22 delay=60 timeout=320 state=started
+      with_items: ec2.instances
+
+    - name: Create a volume and attach
+      ec2_vol:
+        volume_size: 20
+        instance: "{{item.id}}"
+        region: "{{region}}"
+      with_items: ec2.instances
+      register: ec2_volumes
+
+    - name: Add tags to volumes
+      ec2_tag:
+        resource: "{{item.volume_id}}"
+        region: "{{region}}"
+        state: present
+        tags:
+          Name: "{{ lookup('env', 'USER') }}-{{ keypair }}"
+      with_items: ec2_volumes.results
+
+    - name: "Copy AWS key (TODO (!!) this is totally lame; we should be using a custom user and generating a fresh SSH key here so that other users can restart Myria)"
+      sudo: no
+      copy: src="~/.ssh/{{keypair}}.rsa" dest="~/.ssh/id_rsa" mode=0600
+
+# Prepare worker environment
+- name: Configure workers
+  hosts: workers
+  remote_user: ubuntu
+  sudo: yes
+  gather_facts: false
+
+  vars:
+      database_name: myria
+      database_username: uwdb # Myria currently requires a postgres user named 'uwdb'
+      database_password: uwdb # TODO: Fix me :(
+      postgres_version: 9.4
+
+      myria_path: /mnt/myria #TODO duplicated below
+
+  tasks:
+    - name: Installing packages
+      apt: name="{{item}}" update_cache=yes
+      with_items:
+        - postgresql-{{postgres_version}}
+        - libpq-dev
+        - python-psycopg2
+        - git
+        - openjdk-7-jre
+        - openjdk-7-jdk
+        - libxml2-dev
+        - libxslt1-dev
+        - python-dev
+
+    - name: Update Postgres listeners
+      lineinfile: dest=/etc/postgresql/{{postgres_version}}/main/postgresql.conf
+                  regexp="^listen_addresses"
+                  line="listen_addresses = '*'" state=present
+                  backup=yes
+      lineinfile: dest=/etc/postgresql/{{postgres_version}}/main/pg_hba.conf
+                  line="host    all   all        0.0.0.0/0   md5" state=present
+                  backup=yes
+
+#    - name: Restart Postgres
+#      service:
+#        name: postgresql
+#        state: restarted
+
+    - name: Create database instance
+      postgresql_db: name={{database_name}}
+      become_user: postgres
+
+    - name: Create database user
+      postgresql_user: db={{database_name}} name={{database_username}} password={{database_password}} priv=ALL
+      become_user: postgres
+
+    - name: Create Myria group
+      group: name=myria state=present
+
+    - name: Create worker directory
+      file: path={{myria_path}} state=directory owner=ubuntu group=myria mode=0775
+
+# Prepare coordinator environment
+- name: Configure coordinator
+  hosts: coordinators
+  remote_user: ubuntu
+  sudo: yes
+  gather_facts: false
+
+  vars:
+      myria_repository_url: https://github.com/uwescience/myria.git
+      myria_path: /mnt/myria
+      myria_branch: master
+      rest_port: 8753
+      coordinator_port: 8001
+      worker_base_port: 9001
+      database_password: uwdbuwdb # TODO fix me :(
+
+      keypair: bhaynesKey # TODO
+
+  tasks:
+    - name: Clone Myria repository
+      sudo: no
+      git: repo="{{myria_repository_url}}"
+           dest="{{myria_path}}"
+           version="{{myria_branch}}"
+
+    - name: Compile
+      shell: "./gradlew jar"
+      sudo: no
+      args:
+        chdir: "{{myria_path}}"
+        creates: "{{myria_path}}/build/libs"
+
+    - name: Create deployment configuration file
+      shell: "./create_deployment.py {{myria_path}} {{ groups['coordinator_name'] | join(' ') }} \
+                                                    {{ groups['worker_names'] | join(' ') }} \
+                                                    --rest-port {{rest_port}} \
+                                                    --coordinator-port {{coordinator_port}} \
+                                                    --worker-base-port {{worker_base_port}} \
+                                                    --database-password {{database_password}} \
+                > {{myria_path}}/myriadeploy/deployment.ec2.config"
+      sudo: no
+      args:
+        chdir: "{{myria_path}}/myriadeploy"
+        creates: "{{myria_path}}/myriadeploy/deployment.ec2.config"
+
+    - name: Begin cluster setup
+      shell: "./setup_cluster.py deployment.ec2.config"
+      sudo: no
+      args:
+        chdir: "{{myria_path}}/myriadeploy"
+        creates: "{{myria_path}}/myria/master"
+
+    - name: Launch cluster
+      shell: "./launch_cluster deployment.ec2.config"
+      sudo: no
+      args:
+        chdir: "{{myria_path}}/myriadeploy"
