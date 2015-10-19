@@ -30,7 +30,7 @@
         from_port: 22
         to_port: 22
         cidr_ip: 0.0.0.0/0
-      - proto: tcp
+      - proto: tcp # this did not work
         type: myria
         from_port: 8001
         to_port: 9100
@@ -219,15 +219,14 @@
         creates: "{{myria_path}}/myriadeploy/deployment.ec2.config"
 
     - name: Begin cluster setup  
-      shell: "./setup_cluster.py deployment.ec2.config"
+      shell: "./setup_cluster.py  --clean-catalog deployment.ec2.config"
       sudo: no
       args:
         chdir: "{{myria_path}}/myriadeploy"
         creates: "{{myria_path}}/myria/master"
 
     - name: Launch cluster # this is failing right now, need to puch some holes in the filewall so master-worker can talk
-      shell: "./launch_cluster.sh deployment.ec2.config \
-               --clean-catalog"
+      shell: "./launch_cluster.sh deployment.ec2.config"
       sudo: no
       args:
         chdir: "{{myria_path}}/myriadeploy"
