@@ -2,7 +2,7 @@
 #installing myria in ec2 with ansible
 #install ansible on a local( controller machine), replace key name with your ec2 key
 #
-#ansible-playbook myria.yml "-e KEY_NAME=parmita-keypair" 
+#ansible-playbook myria.yml y
 # 
 
 - name: Create AWS resources
@@ -29,6 +29,11 @@
         type: ssh
         from_port: 22
         to_port: 22
+        cidr_ip: 0.0.0.0/0
+      - proto: tcp
+        type: myria
+        from_port: 8001
+        to_port: 9100
         cidr_ip: 0.0.0.0/0
       rules_egress:
       - proto: all
@@ -101,11 +106,11 @@
   #  sudo: yes
 
   - name: copy private ssh keys #copy the key over to ec2 - this asks for confirmation - fix that
-    local_action: "command scp -rp3 {{ new_priv_key }} ubuntu@{{ hostvars.localhost.ec2.instances[0].public_dns_name }}:./.ssh/id_rsa"
+    local_action: "command scp -rp3  -o StrictHostKeyChecking=no   {{ new_priv_key }} ubuntu@{{ hostvars.localhost.ec2.instances[0].public_dns_name }}:./.ssh/id_rsa"
     sudo: no
 
   - name: copy public ssh keys #copy the key over to ec2 workers
-    local_action: "command scp -rp3 {{ new_pub_key }} ubuntu@{{ item.public_dns_name }}:./.ssh/id_rsa.pub"
+    local_action: "command scp -rp3 -o StrictHostKeyChecking=no   {{ new_pub_key }} ubuntu@{{ item.public_dns_name }}:./.ssh/id_rsa.pub"
     with_items: ec2.instances
     sudo: no
 
