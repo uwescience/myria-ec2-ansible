@@ -30,10 +30,25 @@
         from_port: 22
         to_port: 22
         cidr_ip: 0.0.0.0/0
+      - proto: tcp
+        type: postgres
+        from_port: 5432
+        to_port: 5432
+        cidr_ip: 0.0.0.0/0
       - proto: tcp # this did not work
         type: myria
         from_port: 8001
         to_port: 9100
+        cidr_ip: 0.0.0.0/0
+      - proto: tcp
+        type: http
+        from_port: 80
+        to_port: 80
+        cidr_ip: 0.0.0.0/0
+      - proto: tcp
+        type: https
+        from_port: 443
+        to_port: 443
         cidr_ip: 0.0.0.0/0
       rules_egress:
       - proto: all
@@ -100,11 +115,6 @@
     delegate_to: localhost
     ignore_errors: yes
 
-  #name: add to controller ssh config #this is to prevent from interactive prompts for ssh
-  #  shell: (echo Host {{item.public_ip}}; echo StrictHostKeyChecking no; echo UserKnownHostsFile=/dev/null) >> /etc/ssh/ssh_config
-  #  with_items: ec2.instances
-  #  sudo: yes
-
   - name: copy private ssh keys #copy the key over to ec2 - this asks for confirmation - fix that
     local_action: "command scp -rp3  -o StrictHostKeyChecking=no   {{ new_priv_key }} ubuntu@{{ hostvars.localhost.ec2.instances[0].public_dns_name }}:./.ssh/id_rsa"
     sudo: no
@@ -152,11 +162,12 @@
       - libxslt1-dev
       - python-dev
 
-  - name: Update Postgres listeners
+  - name: altering postgres conf- adding listeners #this is not adding the line in place.
     lineinfile: dest=/etc/postgresql/{{postgres_version}}/main/postgresql.conf
                   regexp="^listen_addresses"
                   line="listen_addresses = '*'" state=present
                   backup=yes
+  - name: altering pg_hba.conf- adding listeners #this is not adding the line in place.
     lineinfile: dest=/etc/postgresql/{{postgres_version}}/main/pg_hba.conf
                   line="host    all   all        0.0.0.0/0   md5" state=present
                   backup=yes
@@ -189,7 +200,7 @@
     rest_port: 8753
     coordinator_port: 8001
     worker_base_port: 9001
-    database_password: uwdbuwdb # TODO fix me :(
+    database_password: uwdb # TODO fix me :(
 
   tasks:
     - name: Clone Myria repository
@@ -219,13 +230,13 @@
         creates: "{{myria_path}}/myriadeploy/deployment.ec2.config"
 
     - name: Begin cluster setup  
-      shell: "./setup_cluster.py  --clean-catalog deployment.ec2.config"
+      shell: "./setup_cluster.py  deployment.ec2.config --clean-catalog "
       sudo: no
       args:
         chdir: "{{myria_path}}/myriadeploy"
         creates: "{{myria_path}}/myria/master"
 
-    - name: Launch cluster # this is failing right now, need to puch some holes in the filewall so master-worker can talk
+    - name: Launch cluster 
       shell: "./launch_cluster.sh deployment.ec2.config"
       sudo: no
       args:
