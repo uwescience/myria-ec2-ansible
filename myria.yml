@@ -186,6 +186,9 @@
   - name: Create worker directory
     file: path={{myria_path}} state=directory owner=ubuntu group=myria mode=0775
 
+  - name: Restart Postgres
+    service: name=postgresql state=restarted
+
 # Prepare coordinator environment
 - name: Configure coordinator
   hosts: coordinators
