@@ -2,7 +2,7 @@
 #installing myria in ec2 with ansible
 #install ansible on a local( controller machine), replace key name with your ec2 key
 #
-#ansible-playbook myria.yml y
+#ansible-playbook myria.yml "-e KEY_NAME=parmita-keypair"
 # 
 
 - name: Create AWS resources
