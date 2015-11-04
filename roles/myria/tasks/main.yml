@@ -1,0 +1,47 @@
+---
+# configuring myria on the coordinator node
+# clone git repo, build, create deployment config, setup and launch cluster.
+
+- name: Installing packages
+  apt: name="{{item}}" update_cache=yes
+  with_items:
+    - git
+
+- name: Clone Myria repository
+  sudo: no
+  git: repo="{{myria_repository_url}}"
+           dest="{{myria_path}}"
+           version="{{myria_branch}}"
+
+- name: Compile
+  shell: "./gradlew jar"
+  sudo: no
+  args:
+    chdir: "{{myria_path}}"
+    creates: "{{myria_path}}/build/libs"
+
+- name: Create deployment configuration file
+  shell: "./create_deployment.py {{myria_path}} {{ groups['coordinator_name'] | join(' ') }} \
+                                                    {{ groups['worker_names'] | join(' ') }} \
+                                                    --rest-port {{rest_port}} \
+                                                    --coordinator-port {{coordinator_port}} \
+                                                    --worker-base-port {{worker_base_port}} \
+                                                    --database-password {{database_password}} \
+                > {{myria_path}}/myriadeploy/deployment.ec2.config"
+  sudo: no
+  args:
+    chdir: "{{myria_path}}/myriadeploy"
+    creates: "{{myria_path}}/myriadeploy/deployment.ec2.config"
+
+- name: Begin cluster setup  
+  shell: "./setup_cluster.py deployment.ec2.config --clean-catalog"
+  sudo: no
+  args:
+    chdir: "{{myria_path}}/myriadeploy"
+    creates: "{{myria_path}}/myria/master"
+
+- name: Launch cluster 
+  shell: "./launch_cluster.sh deployment.ec2.config"
+  sudo: no
+  args:
+    chdir: "{{myria_path}}/myriadeploy"
