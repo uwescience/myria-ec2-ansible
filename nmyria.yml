@@ -109,6 +109,18 @@
     delegate_to: localhost
     ignore_errors: yes
 
+  - name: copy private ssh keys #copy the key over to ec2 - this asks for confirmation - fix that
+    local_action: "command scp -rp3  -o StrictHostKeyChecking=no   {{ new_priv_key }} ubuntu@{{ hostvars.localhost.ec2.instances[0].public_dns_name }}:./.ssh/id_rsa"
+    sudo: no
+
+  - name: copy public ssh keys #copy the key over to ec2 workers
+    local_action: "command scp -rp3 -o StrictHostKeyChecking=no   {{ new_pub_key }} ubuntu@{{ item.public_dns_name }}:./.ssh/id_rsa.pub"
+    with_items: ec2.instances
+    sudo: no
+
+
+
+
 - name: Configure basic key stuff on all nodes
   hosts: nodes    
   remote_user: ubuntu
@@ -116,21 +128,11 @@
   gather_facts: false
   roles:
     - basenode
-
+    - postgres
 - name: Configure coordinators nodes
   hosts: coordinators
   remote_user: ubuntu
   sudo: yes
   gather_facts: false
   roles:
-    - Myria
-    - Ganglia
-
-- name: Configure worker nodes
-  hosts: workers
-  remote_user: ubuntu
-  sudo: yes
-  gather_facts: false
-  roles:
-    - postgres
-    - Ganglia_client
+    - myria
