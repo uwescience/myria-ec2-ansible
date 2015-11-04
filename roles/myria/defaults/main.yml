@@ -1,0 +1,9 @@
+---
+#default vairables use for setting up myria
+myria_repository_url: https://github.com/uwescience/myria.git
+myria_path: /mnt/myria
+myria_branch: master
+rest_port: 8753
+coordinator_port: 8001
+worker_base_port: 9001
+database_password: uwdb # TODO fix me :(

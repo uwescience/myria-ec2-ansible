@@ -1,0 +1,17 @@
+---
+- name: Add key to authorized key #use shell rather than auth key module.
+  shell: cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+  sudo: no
+
+- name: disable ssh host key checking # this is excessive, fix this to be restricted to the list of IPs deployed
+  shell: (echo Host *; echo StrictHostKeyChecking no; echo UserKnownHostsFile=/dev/null) >> /etc/ssh/ssh_config
+  sudo: yes
+
+- name: Installing packages
+  apt: name="{{item}}" update_cache=yes
+  with_items:
+    - openjdk-7-jre
+    - openjdk-7-jdk
+    - libxml2-dev
+    - libxslt1-dev
+    - python-dev

@@ -1,0 +1,39 @@
+---
+##
+###installing and configuring postgres for myria
+## 
+
+- name: Installing packages
+  apt: name="{{item}}" update_cache=yes
+  with_items:
+    - postgresql-{{postgres_version}}
+    - libpq-dev
+    - python-psycopg2
+
+- name: altering postgres conf- adding listeners 
+  lineinfile: dest=/etc/postgresql/{{postgres_version}}/main/postgresql.conf
+                regexp="^listen_addresses"
+                line="listen_addresses = '*'" state=present
+                backup=yes
+
+- name: altering pg_hba.conf- adding listeners 
+  lineinfile: dest=/etc/postgresql/{{postgres_version}}/main/pg_hba.conf
+                line="host    all   all        0.0.0.0/0   md5" state=present
+                backup=yes
+
+- name: Create database instance
+  postgresql_db: name={{database_name}}
+  become_user: postgres
+
+- name: Create database user
+  postgresql_user: db={{database_name}} name={{database_username}} password={{database_password}} priv=ALL
+  become_user: postgres
+
+- name: Create Myria group
+  group: name=myria state=present
+
+- name: Create worker directory
+  file: path={{myria_path}} state=directory owner=ubuntu group=myria mode=0775
+
+- name: Restart Postgres
+  service: name=postgresql state=restarted
