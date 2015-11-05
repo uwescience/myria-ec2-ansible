@@ -34,6 +34,11 @@
         from_port: 80
         to_port: 80
         cidr_ip: 0.0.0.0/0
+      - proto: udp
+        type: ganglia
+        from_port: 8649
+        to_port: 8649
+        cidr_ip: 0.0.0.0/0
       - proto: tcp
         type: https
         from_port: 443
@@ -70,6 +75,10 @@
 
   - name: Add first instance to coordinators group
     add_host: hostname={{item.public_ip}} groupname=coordinators
+    with_items: ec2.instances[:1]
+
+  - name: Add first instance to ganglia_master group
+    add_host: hostname={{item.private_ip}} groupname=ganglia_master
     with_items: ec2.instances[:1]
 
   - name: Add remaining instance to workers group
@@ -136,3 +145,19 @@
   gather_facts: false
   roles:
     - myria
+    - ganglia
+- name: Configure ganglia client on all nodes
+  hosts: nodes
+  remote_user: ubuntu
+  sudo: yes
+  gather_facts: false
+  roles:
+    - ganglia-client
+
+- name: list the name of master
+  hosts: coordinators
+  gather_facts: false
+  remote_user: ubuntu  
+  tasks:
+    debug: msg= "myria coordinator and ganglia master IP is- {{play_hosts}}, user for ssh - ubuntu"
+
