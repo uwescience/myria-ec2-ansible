@@ -24,21 +24,12 @@ For the purposes of setting up MyriaX on EC2, we assume you are using your lapto
 
 
 *  __Get the Ansible Playbook__
-   Get the myriaX.yml from  git by cloning https://github.com/parmitam/myria-ec2-ansible.git
+   Get the ansible scripts from  git by cloning https://github.com/parmitam/myria-ec2-ansible.git
 
 *  __Deploy__
    Run the ansibleplaybook with the following command
-   ansible-playbook myria.yml "-e KEY_NAME=<your keypair name>" 
+   ansible-playbook myria.yml "-e KEY_NAME=__<your keypair name>__" 
 
-Once the deployment is  finished, you will see the following:
-ok: [some IP address] => {
-    "msg": "ssh to master by using public ip - [u'52.89.52.76'], and user - ubuntu"
-}
-
-
-## Myria with Ganglia
-
-ansible-playbook nmyria.yml "-e KEY_NAME=__your keypair name__" 
 
 ## Ansible Inventory Error
 In case ansible complains that there is no inventory/hosts file, follow
