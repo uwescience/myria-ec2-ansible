@@ -128,8 +128,6 @@
     sudo: no
 
 
-
-
 - name: Configure basic key stuff on all nodes
   hosts: nodes    
   remote_user: ubuntu
@@ -138,6 +136,7 @@
   roles:
     - basenode
     - postgres
+
 - name: Configure coordinators nodes
   hosts: coordinators
   remote_user: ubuntu
@@ -145,7 +144,9 @@
   gather_facts: false
   roles:
     - myria
+    - myria-python
     - ganglia
+
 - name: Configure ganglia client on all nodes
   hosts: nodes
   remote_user: ubuntu
@@ -157,7 +158,7 @@
 - name: list the name of master
   hosts: coordinators
   gather_facts: false
-  remote_user: ubuntu  
+  remote_user: ubuntu
+  sudo: yes  
   tasks:
     debug: msg= "myria coordinator and ganglia master IP is- {{play_hosts}}, user for ssh - ubuntu"
-

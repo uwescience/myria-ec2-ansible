@@ -1,0 +1,31 @@
+---
+##
+## tasks for installing  myria python
+##
+
+- name: Installing packages
+  apt: name="{{item}}" update_cache=yes
+  with_items:
+    - git
+    - python-setuptools
+    - build-essential 
+    - libffi-dev
+    - libssl-dev
+    - python-lxml
+
+- name: Clone Myria python repository
+  sudo: no
+  git: repo="{{myria_python_repository_url}}"
+           dest="{{myria_python}}"
+#wget https://bootstrap.pypa.io/ez_setup.py -O - | sudo python
+
+- name: Setup myria python
+  shell: "easy_install pip"
+  sudo: yes 
+
+- name: Setup myria python
+  shell: "python setup.py install"
+  sudo: yes
+  args:
+        chdir: "{{myria_python}}"
+

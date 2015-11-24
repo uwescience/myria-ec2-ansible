@@ -1,0 +1,5 @@
+---
+#default vairables use for setting up myria-python
+myria_python_repository_url: 'https://github.com/uwescience/myria-python.git'
+myria_python: '/home/ubuntu/myria-python'
+
