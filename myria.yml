@@ -1,11 +1,12 @@
 ---
+##ansible-playbook myria.yml "-e KEY_NAME=parmita-keypair"
 - name: Create AWS resources
   hosts: localhost
   gather_facts: False
   vars:
     key_name: "{{ KEY_NAME }}"
     instance_type: m1.small
-    instance_count: 2
+    instance_count: 3
     security_group: default
     image: ami-6989a659
     region: us-west-2
@@ -123,7 +124,7 @@
     sudo: no
 
   - name: copy public ssh keys #copy the key over to ec2 workers
-    local_action: "command scp -rp3 -i~/.ssh/{{key_name}}  -o StrictHostKeyChecking=no   {{ new_pub_key }} ubuntu@{{ item.public_dns_name }}:./.ssh/id_rsa.pub"
+    local_action: "command scp -rp3 -o StrictHostKeyChecking=no   {{ new_pub_key }} ubuntu@{{ item.public_dns_name }}:./.ssh/id_rsa.pub"
     with_items: ec2.instances
     sudo: no
 
