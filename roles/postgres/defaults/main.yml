@@ -3,6 +3,5 @@
 database_name: myria
 database_username: uwdb # Myria currently requires a postgres user named 'uwdb'
 database_password: uwdb # TODO: Fix me :(
-postgres_version: 9.3
+postgres_version: 9.4
 myria_path: /mnt/myria 
-

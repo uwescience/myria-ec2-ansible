@@ -5,14 +5,12 @@
   gather_facts: False
   vars:
     key_name: "{{ KEY_NAME }}"
-    instance_type: m1.small
+    instance_type: t2.small
     instance_count: 3
     security_group: default
-    image: ami-6989a659
+    image: ami-5189a661
     region: us-west-2
     wait_timeout: 600
-    new_pub_key: ~/.ssh/id_rsa_new.pub
-    new_priv_key: ~/.ssh/id_rsa_new
   tasks:
   - name: Create security group  #so we can ssh into the instance from our laptop
     ec2_group:
@@ -27,8 +25,8 @@
         cidr_ip: 0.0.0.0/0
       - proto: tcp 
         type: myria
-        from_port: 8001
-        to_port: 9100
+        from_port: 8753
+        to_port: 8753
         cidr_ip: 0.0.0.0/0
       - proto: tcp
         type: http
@@ -50,6 +48,34 @@
         from_port: 5432
         to_port: 5432
         cidr_ip: 0.0.0.0/0
+      - proto: tcp
+        type: namenode
+        from_port: 8020
+        to_port: 8020
+      - proto: tcp
+        type: datanode
+        from_port: 50010
+        to_port: 50075
+      - proto: tcp
+        type: zookeeper
+        from_port: 2181
+        to_port: 2181
+      - proto: tcp
+        type: resourcemanager
+        from_port: 8032
+        to_port: 8032
+      - proto: tcp
+        type: resourcemanager-admin
+        from_port: 8033
+        to_port: 8033
+      - proto: tcp
+        type: resourcemanager-ui
+        from_port: 8088
+        to_port: 8088
+      - proto: tcp
+        type: nodemanager-ui
+        from_port: 8042
+        to_port: 8042
       rules_egress:
       - proto: all
         type: all
@@ -68,6 +94,10 @@
       region: "{{region}}"
       instance_tags:
         Name: "{{ lookup('env', 'USER') }}-{{ key_name }}"
+      volumes:
+      - device_name: /dev/sdb
+        volume_size: 20
+        delete_on_termination: true
     register: ec2
 
   - name: Add new instances to host group
@@ -78,13 +108,29 @@
     add_host: hostname={{item.public_ip}} groupname=coordinators
     with_items: ec2.instances[:1]
 
+  - name: Add first instance to rmnode group
+    add_host: hostname={{item.public_ip}} groupname=rmnode
+    with_items: ec2.instances[:1]
+
+  - name: Add first instance to rmnode_private group
+    add_host: hostname={{item.private_ip}} groupname=rmnode_private
+    with_items: ec2.instances[:1]
+
   - name: Add first instance to ganglia_master group
     add_host: hostname={{item.private_ip}} groupname=ganglia_master
     with_items: ec2.instances[:1]
 
-  - name: Add remaining instance to workers group
+  - name: Add remaining instances to workers group
     add_host: hostname={{item.public_ip}} groupname=workers
-    with_items: ec2.instances
+    with_items: ec2.instances[1:]
+
+  - name: Add remaining instances to nmnodes group
+    add_host: hostname={{item.public_ip}} groupname=nmnodes
+    with_items: ec2.instances[1:]
+
+  - name: Add remaining instances to nmnodes_private group
+    add_host: hostname={{item.private_ip}} groupname=nmnodes_private
+    with_items: ec2.instances[1:]
 
   - add_host: hostname={{item.dns_name}} groupname=coordinator_name
     with_items: ec2.instances[:1]
@@ -96,22 +142,22 @@
     local_action: wait_for host={{ item.public_dns_name }} port=22 delay=60 timeout=320 state=started
     with_items: ec2.instances
 
-  - name: Create a volume and attach
-    ec2_vol:
-      volume_size: 20
-      instance: "{{item.id}}"
-      region: "{{region}}"
-    with_items: ec2.instances
-    register: ec2_volumes
+  # - name: Create a volume and attach
+  #   ec2_vol:
+  #     volume_size: 20
+  #     instance: "{{item.id}}"
+  #     region: "{{region}}"
+  #   with_items: ec2.instances
+  #   register: ec2_volumes
 
-  - name: Add tags to volumes
-    ec2_tag:
-      resource: "{{item.volume_id}}"
-      region: "{{region}}"
-      state: present
-      tags:
-        Name: "{{ lookup('env', 'USER') }}-{{ key_name }}"
-    with_items: ec2_volumes.results
+  # - name: Add tags to volumes
+  #   ec2_tag:
+  #     resource: "{{item.volume_id}}"
+  #     region: "{{region}}"
+  #     state: present
+  #     tags:
+  #       Name: "{{ lookup('env', 'USER') }}-{{ key_name }}"
+  #   with_items: ec2_volumes.results
 
   - name: Create new ssh key-pair#generate a keylocally - this  will generate an error(ignored) if key exists... 
     shell: ssh-keygen -q -t rsa -N "" 
@@ -119,24 +165,42 @@
     delegate_to: localhost
     ignore_errors: yes
 
-  - name: copy private ssh keys #copy the key over to ec2 - this asks for confirmation - fix that
-    local_action: "command scp -rp3  -o StrictHostKeyChecking=no   {{ new_priv_key }} ubuntu@{{ hostvars.localhost.ec2.instances[0].public_dns_name }}:./.ssh/id_rsa"
-    sudo: no
+- name: Set up SSH private key on coordinator
+  hosts: coordinators
+  remote_user: ubuntu
+  sudo: no
+  tasks:
+  - copy: src={{ new_priv_key }} dest={{ remote_new_priv_key }} owner=ubuntu mode=400
 
-  - name: copy public ssh keys #copy the key over to ec2 workers
-    local_action: "command scp -rp3 -o StrictHostKeyChecking=no   {{ new_pub_key }} ubuntu@{{ item.public_dns_name }}:./.ssh/id_rsa.pub"
-    with_items: ec2.instances
-    sudo: no
+- name: Set up SSH public key on workers
+  hosts: workers
+  remote_user: ubuntu
+  sudo: no
+  tasks:
+  - authorized_key: user=ubuntu key="{{ item }}"
+    with_file:
+    - "{{ new_pub_key }}"
 
+# - name: Build hosts file on all nodes
+#   hosts: nodes
+#   remote_user: ubuntu
+#   sudo: yes
+#   tasks:
+#     - name: Build hosts file (backups will be made)
+#       lineinfile: dest=/etc/hosts regexp='{{ hostvars[item].ansible_hostname }}$' line='{{ hostvars[item].private_ip }} {{ item }} {{ hostvars[item].ansible_hostname }}' state=present backup=yes
+#       when: hostvars[item].ansible_default_ipv4.address is defined
+#       with_items: groups['all']
 
-- name: Configure basic key stuff on all nodes
+- name: Configure common functionality on all nodes
   hosts: nodes    
   remote_user: ubuntu
   sudo: yes
   gather_facts: false
   roles:
     - basenode
+    - yarn-common
     - postgres
+    - ganglia-client
 
 - name: Configure coordinators nodes
   hosts: coordinators
@@ -144,17 +208,25 @@
   sudo: yes
   gather_facts: false
   roles:
-    - myria
     - myria-python
+    - yarn-rm
     - ganglia
 
-- name: Configure ganglia client on all nodes
-  hosts: nodes
+- name: Configure workers nodes
+  hosts: workers
   remote_user: ubuntu
   sudo: yes
   gather_facts: false
   roles:
-    - ganglia-client
+    - yarn-nm
+    
+- name: Configure and launch Myria on coordinator
+  hosts: coordinators
+  remote_user: ubuntu
+  sudo: yes
+  gather_facts: false
+  roles:
+    - myria
 
 - name: list the name of master
   hosts: coordinators
