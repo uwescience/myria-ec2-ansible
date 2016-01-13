@@ -15,28 +15,22 @@
   - name: Create security group  #so we can ssh into the instance from our laptop
     ec2_group:
       name: myriasec
-      description: "A Security group"
+      description: "Myria security group"
       region: "{{region}}"
       rules:
+      - proto: all
+        from_port: 0
+        to_port: 65535
+        group_name: myriasec
       - proto: tcp
         type: ssh
         from_port: 22
         to_port: 22
         cidr_ip: 0.0.0.0/0
-      - proto: tcp 
-        type: myria
-        from_port: 8753
-        to_port: 8753
-        cidr_ip: 0.0.0.0/0
       - proto: tcp
         type: http
         from_port: 80
         to_port: 80
-        cidr_ip: 0.0.0.0/0
-      - proto: udp
-        type: ganglia
-        from_port: 8649
-        to_port: 8649
         cidr_ip: 0.0.0.0/0
       - proto: tcp
         type: https
@@ -44,46 +38,20 @@
         to_port: 443
         cidr_ip: 0.0.0.0/0
       - proto: tcp
-        type: postgres
-        from_port: 5432
-        to_port: 5432
+        type: myria
+        from_port: 8753
+        to_port: 8753
         cidr_ip: 0.0.0.0/0
-      - proto: tcp
-        type: namenode
-        from_port: 8020
-        to_port: 8020
-      - proto: tcp
-        type: datanode
-        from_port: 50010
-        to_port: 50075
-      - proto: tcp
-        type: zookeeper
-        from_port: 2181
-        to_port: 2181
-      - proto: tcp
-        type: resourcemanager
-        from_port: 8032
-        to_port: 8032
-      - proto: tcp
-        type: resourcemanager-scheduler
-        from_port: 8030
-        to_port: 8030
-      - proto: tcp
-        type: resourcemanager-tracker
-        from_port: 8025
-        to_port: 8025
-      - proto: tcp
-        type: resourcemanager-admin
-        from_port: 8033
-        to_port: 8033
       - proto: tcp
         type: resourcemanager-ui
         from_port: 8088
         to_port: 8088
+        cidr_ip: 0.0.0.0/0
       - proto: tcp
         type: nodemanager-ui
         from_port: 8042
         to_port: 8042
+        cidr_ip: 0.0.0.0/0
       rules_egress:
       - proto: all
         type: all
@@ -150,60 +118,11 @@
     local_action: wait_for host={{ item.public_dns_name }} port=22 delay=60 timeout=320 state=started
     with_items: ec2.instances
 
-  # - name: Create a volume and attach
-  #   ec2_vol:
-  #     volume_size: 20
-  #     instance: "{{item.id}}"
-  #     region: "{{region}}"
-  #   with_items: ec2.instances
-  #   register: ec2_volumes
-
-  # - name: Add tags to volumes
-  #   ec2_tag:
-  #     resource: "{{item.volume_id}}"
-  #     region: "{{region}}"
-  #     state: present
-  #     tags:
-  #       Name: "{{ lookup('env', 'USER') }}-{{ key_name }}"
-  #   with_items: ec2_volumes.results
-
-  - name: Create new ssh key-pair#generate a keylocally - this  will generate an error(ignored) if key exists... 
-    shell: ssh-keygen -q -t rsa -N "" 
-               -f {{ new_priv_key }}
-    delegate_to: localhost
-    ignore_errors: yes
-
-- name: Set up SSH private key on coordinator
-  hosts: coordinators
-  remote_user: ubuntu
-  sudo: no
-  tasks:
-  - copy: src={{ new_priv_key }} dest={{ remote_new_priv_key }} owner=ubuntu mode=400
-
-- name: Set up SSH public key on workers
-  hosts: workers
-  remote_user: ubuntu
-  sudo: no
-  tasks:
-  - authorized_key: user=ubuntu key="{{ item }}"
-    with_file:
-    - "{{ new_pub_key }}"
-
-# - name: Build hosts file on all nodes
-#   hosts: nodes
-#   remote_user: ubuntu
-#   sudo: yes
-#   tasks:
-#     - name: Build hosts file (backups will be made)
-#       lineinfile: dest=/etc/hosts regexp='{{ hostvars[item].ansible_hostname }}$' line='{{ hostvars[item].private_ip }} {{ item }} {{ hostvars[item].ansible_hostname }}' state=present backup=yes
-#       when: hostvars[item].ansible_default_ipv4.address is defined
-#       with_items: groups['all']
-
 - name: Configure common functionality on all nodes
   hosts: nodes    
   remote_user: ubuntu
   sudo: yes
-  gather_facts: false
+  gather_facts: true
   roles:
     - basenode
     - yarn-common
@@ -225,7 +144,7 @@
   gather_facts: false
   roles:
     - yarn-nm
-    
+
 - name: Configure and launch Myria on coordinator
   hosts: coordinators
   remote_user: ubuntu

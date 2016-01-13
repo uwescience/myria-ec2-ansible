@@ -12,7 +12,6 @@ SLAVE_IPS={% set comma = joiner(",") %}
 APP_USER={{ myria_user }}
 HADOOP_USER={{ hadoop_user }}
 HADOOP_GROUP={{ hadoop_group }}
-HADOOP_HOME_HARDLINK={{ common['install_base_path'] }}/hadoop-{{ hadoop_version }}
 
 {% raw %}
 set -e
@@ -48,15 +47,19 @@ echo "slaves list: ${SLAVE_IPS}"
 echo ${SLAVE_IPS} | sed "s/,/\n/g" > ${SLAVES}
 
 echo "fixing permissions ... "
-chown -R root:root ${HADOOP_HOME_HARDLINK}
+# Needed to enable cgroups
+chown -R -H root:root ${HADOOP_HOME}
 chown root:${HADOOP_GROUP} ${CONTAINER_EXECUTOR}
 chown root:${HADOOP_GROUP} ${CONTAINER_EXECUTOR_CFG}
 chmod 6050 ${CONTAINER_EXECUTOR}
 chmod 0400 ${CONTAINER_EXECUTOR_CFG}
+# Needed for Hadoop daemon and application logs
 mkdir -p ${HADOOP_HOME}/logs
 chmod 777 ${HADOOP_HOME}/logs
+# Needed for NameNode data
 mkdir -p ${HADOOP_HOME}/tmp
 chmod 777 ${HADOOP_HOME}/tmp
+# Needed for HDFS permissions to work
 groupadd supergroup
 usermod -a -G supergroup ${HADOOP_USER}
 usermod -a -G supergroup ${APP_USER}
