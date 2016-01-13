@@ -57,6 +57,16 @@
   </property>
 
   <property>
+    <name>yarn.nodemanager.linux-container-executor.group</name>
+    <value>{{ hadoop_group }}</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.linux-container-executor.nonsecure-mode.limit-users</name>
+    <value>false</value>
+  </property>
+
+  <property>
     <name>yarn.log-aggregation-enable</name>
     <value>false</value>
   </property>

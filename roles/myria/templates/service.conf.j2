@@ -1,0 +1,16 @@
+description "myria"
+
+start on startup
+stop on shutdown
+
+setuid {{myria_user}}
+
+respawn
+
+script
+    . {{ common['soft_link_base_path'] }}/hadoop/env.sh
+    {{ common['soft_link_base_path'] }}/hadoop/bin/yarn jar {{myria_path}}/build/libs/myria-0.1-all.jar edu.washington.escience.myria.daemon.MyriaDriverLauncher -runtimeClass org.apache.reef.runtime.yarn.client.YarnClientConfiguration -configPath {{myria_path}}/myriadeploy -javaLibPath {{myria_path}}/build/libs -nativeLibPath {{myria_path}}/lib >> {{myria_path}}/myriadeploy/myria-launcher.log 2>&1
+end script
+
+# kill myria launcher process
+post-stop exec kill `pgrep -f MyriaDriverLauncher`

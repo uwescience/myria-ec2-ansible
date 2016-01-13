@@ -7,3 +7,5 @@ rest_port: 8753
 coordinator_port: 8001
 worker_base_port: 9001
 database_password: uwdb # TODO fix me :(
+container_mem_gb: 1
+container_vcores: 1

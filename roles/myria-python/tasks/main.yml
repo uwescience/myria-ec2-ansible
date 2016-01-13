@@ -19,11 +19,11 @@
            dest="{{myria_python}}"
 #wget https://bootstrap.pypa.io/ez_setup.py -O - | sudo python
 
-- name: Setup myria python
+- name: Install pip
   shell: "easy_install pip"
   sudo: yes 
 
-- name: Setup myria python
+- name: Setup myria-python
   shell: "python setup.py install"
   sudo: yes
   args:

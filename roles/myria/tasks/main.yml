@@ -27,14 +27,16 @@
                                                     --coordinator-port {{coordinator_port}} \
                                                     --worker-base-port {{worker_base_port}} \
                                                     --database-password {{database_password}} \
+                                                    --container-memory-size-gb {{container_mem_gb}} \
+                                                    --container-vcores-number {{container_vcores}}
                 > {{myria_path}}/myriadeploy/deployment.cfg"
   sudo: no
   args:
     chdir: "{{myria_path}}/myriadeploy"
     creates: "{{myria_path}}/myriadeploy/deployment.cfg"
 
-- name: Launch cluster
-  shell: ". {{ common['soft_link_base_path'] }}/hadoop/env.sh && {{ common['soft_link_base_path'] }}/hadoop/bin/yarn jar {{myria_path}}/build/libs/myria-0.1-all.jar edu.washington.escience.myria.daemon.MyriaDriverLauncher -runtimeClass org.apache.reef.runtime.yarn.client.YarnClientConfiguration -configPath {{myria_path}}/myriadeploy -javaLibPath {{myria_path}}/build/libs -nativeLibPath {{myria_path}}/lib"
-  sudo: no
-  args:
-    chdir: "{{myria_path}}/myriadeploy"
+- name: Install Myria service
+  template: src=service.conf.j2 dest=/etc/init/myria.conf backup=yes mode=0644
+
+- name: Ensure Myria service is started
+  action: service name=myria state=started
