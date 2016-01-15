@@ -17,7 +17,6 @@
   sudo: no
   git: repo="{{myria_python_repository_url}}"
            dest="{{myria_python}}"
-#wget https://bootstrap.pypa.io/ez_setup.py -O - | sudo python
 
 - name: Install pip
   shell: "easy_install pip"
@@ -28,4 +27,3 @@
   sudo: yes
   args:
         chdir: "{{myria_python}}"
-

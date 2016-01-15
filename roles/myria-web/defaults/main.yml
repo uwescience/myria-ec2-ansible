@@ -1,0 +1,4 @@
+---
+#default variables used for setting up myria-web
+myria_web_repository_url: 'https://github.com/uwescience/myria-web.git'
+myria_web_path: '/mnt/myria-web'

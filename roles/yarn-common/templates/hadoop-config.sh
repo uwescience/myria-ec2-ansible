@@ -14,3 +14,4 @@ export YARN_SITE=${HADOOP_HOME}/etc/hadoop/yarn-site.xml
 export MAPRED_SITE=${HADOOP_HOME}/etc/hadoop/mapred-site.xml
 export SLAVES=${HADOOP_HOME}/etc/hadoop/slaves
 export ENV_CONFIG=${HADOOP_HOME}/env.sh
+export YARN_LOG_LEVEL={{ yarn_log_level }}

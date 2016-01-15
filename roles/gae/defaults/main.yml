@@ -1,0 +1,5 @@
+---
+#default variables used for setting up Google App Engine SDK
+#gae_sdk_url: https://storage.googleapis.com/appengine-sdks/featured/google_appengine_{{ gae_version }}.zip
+gae_sdk_url: http://s3-us-west-2.amazonaws.com/uwdb/myria/deploy-cache/google_appengine/google_appengine_{{ gae_version }}.zip
+gae_sdk_download_path: /tmp/google_appengine_{{ gae_version }}.zip

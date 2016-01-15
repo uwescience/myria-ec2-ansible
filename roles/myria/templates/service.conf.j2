@@ -5,12 +5,12 @@ stop on shutdown
 
 setuid {{myria_user}}
 
-respawn
+respawn limit 1 30
 
 script
     . {{ common['soft_link_base_path'] }}/hadoop/env.sh
-    {{ common['soft_link_base_path'] }}/hadoop/bin/yarn jar {{myria_path}}/build/libs/myria-0.1-all.jar edu.washington.escience.myria.daemon.MyriaDriverLauncher -runtimeClass org.apache.reef.runtime.yarn.client.YarnClientConfiguration -configPath {{myria_path}}/myriadeploy -javaLibPath {{myria_path}}/build/libs -nativeLibPath {{myria_path}}/lib >> {{myria_path}}/myriadeploy/myria-launcher.log 2>&1
+    MYRIA_JAR={{myria_path}}/build/libs/myria-{{myria_version}}-all.jar
+    # configure REEF debug logging
+    export YARN_OPTS="$YARN_OPTS -Djava.util.logging.config.class=org.apache.reef.util.logging.Config"
+    {{ common['soft_link_base_path'] }}/hadoop/bin/yarn jar ${MYRIA_JAR} edu.washington.escience.myria.daemon.MyriaDriverLauncher -runtimeClass org.apache.reef.runtime.yarn.client.YarnClientConfiguration -configPath {{myria_path}}/myriadeploy -javaLibPath {{myria_path}}/build/libs -nativeLibPath {{myria_path}}/lib
 end script
-
-# kill myria launcher process
-post-stop exec kill `pgrep -f MyriaDriverLauncher`

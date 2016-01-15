@@ -3,9 +3,9 @@
 myria_repository_url: https://github.com/uwescience/myria.git
 myria_path: /mnt/myria
 myria_branch: reef
-rest_port: 8753
+namenode_port: 8020
 coordinator_port: 8001
 worker_base_port: 9001
 database_password: uwdb # TODO fix me :(
-container_mem_gb: 1
-container_vcores: 1
+container_mem_gb: 4
+container_vcores: 2

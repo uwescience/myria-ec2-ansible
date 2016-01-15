@@ -1,0 +1,10 @@
+description "myria-web"
+
+start on started myria
+stop on stopped myria
+
+setuid {{myria_user}}
+
+respawn limit 6 60
+
+exec {{gae_base_dir}}/{{gae_dirname}}/dev_appserver.py --host=0.0.0.0 --port={{ myria_web_port }} --skip_sdk_update_check=true {{myria_web_path}}/appengine

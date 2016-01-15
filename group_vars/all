@@ -52,11 +52,25 @@ routing_network_interface: eth1
 ansible_routing_network_interface: ansible_eth1
 
 container_executor: org.apache.hadoop.yarn.server.nodemanager.LinuxContainerExecutor
+#container_executor: org.apache.hadoop.yarn.server.nodemanager.DefaultContainerExecutor
 cgroups_mount_enable: true
 cgroups_mount_dir: /sys/fs/cgroup
+
+yarn_log_level: DEBUG
 
 #----------------------------------
 #   Myria Variables
 #----------------------------------
 
 myria_user: ubuntu
+myria_version: 0.1
+myria_rest_port: 8753
+myria_web_port: 8080
+
+#----------------------------------
+#   GAE Variables
+#----------------------------------
+
+gae_version: 1.9.31
+gae_base_dir: /opt
+gae_dirname: google_appengine

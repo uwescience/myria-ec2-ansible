@@ -1,0 +1,3 @@
+---
+jdk8_url: http://s3-us-west-2.amazonaws.com/uwdb/myria/deploy-cache/oracle-jdk8-installer/jdk-8u66-linux-x64.tar.gz
+jdk8_file: /var/cache/oracle-jdk8-installer/jdk-8u66-linux-x64.tar.gz

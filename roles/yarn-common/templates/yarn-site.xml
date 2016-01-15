@@ -34,7 +34,14 @@
     <name>yarn.nodemanager.address</name>
     <value>0.0.0.0:28091</value>
     <description>the nodemanagers bind to this port</description>
-  </property>  
+  </property>
+
+  <property>
+    <description>Whether virtual memory limits will be enforced for containers.
+    </description>
+    <name>yarn.nodemanager.vmem-check-enabled</name>
+    <value>false</value>
+  </property>
 
   <property>
     <name>yarn.nodemanager.container-executor.class</name>

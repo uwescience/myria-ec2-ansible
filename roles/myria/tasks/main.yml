@@ -21,14 +21,15 @@
     creates: "{{myria_path}}/build/libs"
 
 - name: Create deployment configuration file
-  shell: "./create_deployment.py {{myria_path}} {{ groups['coordinator_name'] | join(' ') }} \
-                                                    {{ groups['worker_names'] | join(' ') }} \
-                                                    --rest-port {{rest_port}} \
+  shell: "./create_deployment.py {{myria_path}} {{ groups['coordinator_private_name'] | join(' ') }} \
+                                                    {{ groups['worker_private_names'] | join(' ') }} \
+                                                    --rest-port {{myria_rest_port}} \
                                                     --coordinator-port {{coordinator_port}} \
                                                     --worker-base-port {{worker_base_port}} \
                                                     --database-password {{database_password}} \
                                                     --container-memory-size-gb {{container_mem_gb}} \
-                                                    --container-vcores-number {{container_vcores}}
+                                                    --container-vcores-number {{container_vcores}} \
+                                                    --persist-uri hdfs://{{hostvars[groups['rmnode_private'][0]].inventory_hostname}}:{{namenode_port}}
                 > {{myria_path}}/myriadeploy/deployment.cfg"
   sudo: no
   args:

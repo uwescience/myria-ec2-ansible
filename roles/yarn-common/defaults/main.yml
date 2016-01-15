@@ -1,0 +1,6 @@
+---
+#default variables used for setting up myria-web
+#hadoop_binaries_url: http://apache.osuosl.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz
+hadoop_binaries_url: "http://s3-us-west-2.amazonaws.com/uwdb/myria/deploy-cache/hadoop/hadoop-{{ hadoop_version }}.tar.gz"
+hadoop_download_path: /tmp/hadoop-{{ hadoop_version }}.tar.gz
+hadoop_install_path: "{{ common['install_base_path'] }}/hadoop-{{ hadoop_version }}"

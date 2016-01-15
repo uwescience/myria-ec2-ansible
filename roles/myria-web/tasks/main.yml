@@ -1,0 +1,35 @@
+---
+##
+## tasks for installing  myria python
+##
+
+- name: Installing packages
+  apt: name="{{item}}" update_cache=yes
+  with_items:
+    - git
+
+- name: Create repo directory
+  file: path={{myria_web_path}} state=directory owner={{myria_user}} group=myria mode=0775
+
+- name: Clone myria-web repository
+  sudo: no
+  git: repo="{{myria_web_repository_url}}" dest="{{myria_web_path}}" recursive=yes
+
+- name: Setup raco
+  shell: "python setup.py install"
+  sudo: yes
+  args:
+    chdir: "{{myria_web_path}}/submodules/raco"
+
+# this is a disgusting hack but we can't maintain a template file in another repo
+- name: Fill in MyriaX host/port with current values
+  shell: "sed -i -e 's;MYRIAX_REST_HOST.*$;MYRIAX_REST_HOST: {{ inventory_hostname }};g' -e 's;MYRIAX_REST_PORT.*$;MYRIAX_REST_PORT: {{ myria_rest_port }};g' ./appengine/app.yaml"
+  sudo: yes
+  args:
+    chdir: "{{myria_web_path}}"
+
+- name: Install myria-web service
+  template: src=service.conf.j2 dest=/etc/init/myria-web.conf backup=yes mode=0644
+
+- name: Ensure myria-web service is started
+  action: service name=myria-web state=started
