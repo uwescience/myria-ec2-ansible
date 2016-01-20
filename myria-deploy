@@ -1,0 +1,192 @@
+#!/bin/bash
+
+set -o pipefail
+
+SCRIPT_PATH="$( cd "$(dirname "$0")" ; pwd -P )"
+
+MYRIA_ANSIBLE_REPO="uwescience/myria-ec2-ansible"
+MYRIA_ANSIBLE_BRANCH="reef"
+MYRIA_ANSIBLE_TMPDIR="/tmp/myria-ec2-ansible"
+
+DEFAULT_REGION="us-west-2"
+DEFAULT_KEY_PAIR="$USER-myria"
+DEFAULT_PRIVATE_KEY_FILE="$HOME/.ssh/$DEFAULT_KEY_PAIR.pem"
+DEFAULT_INSTANCE_TYPE="t2.large"
+DEFAULT_CLUSTER_SIZE=5
+DEFAULT_AMI_ID="ami-5189a661"
+
+# Use > 1 to consume two arguments per pass in the loop (i.e. each
+# argument has a corresponding value to go with it).
+# Use > 0 to consume one or more arguments per pass in the loop (i.e.
+# some arguments don't have a corresponding value).
+while [[ $# > 1 ]]
+do
+opt="$1"
+
+case $opt in
+    -v|--verbose)
+    VERBOSE=1
+    ;;
+    -p|--profile)
+    PROFILE="$2"
+    shift # past argument
+    ;;
+    -k|--key-pair)
+    KEY_PAIR="$2"
+    shift # past argument
+    ;;
+    -f|--private-key-file)
+    PRIVATE_KEY_FILE="$2"
+    shift # past argument
+    ;;
+    -r|--region)
+    REGION="$2"
+    ;;
+    -s|--cluster-size)
+    CLUSTER_SIZE="$2"
+    shift # past argument
+    ;;
+    -t|--instance-type)
+    INSTANCE_TYPE="$2"
+    shift # past argument
+    ;;
+    -a|--ami-id)
+    AMI_ID="$2"
+    shift # past argument
+    ;;
+    *)
+        echo $USAGE >&2
+        exit 1
+    ;;
+esac
+shift # past argument or value
+done
+
+USAGE=<<EOF
+myria-deploy [options]
+options:
+--verbose
+--profile <defaults to none>
+--key-pair <defaults to $DEFAULT_KEY_PAIR>
+--private-key-file <defaults to $HOME/.ssh/$DEFAULT_KEY_PAIR.pem>
+--region <defaults to $DEFAULT_REGION>
+--instance-type <defaults to $DEFAULT_INSTANCE_TYPE>
+--cluster-size <defaults to $DEFAULT_CLUSTER_SIZE>
+--ami-id <defaults to $DEFAULT_AMI_ID>
+EOF
+
+if [[ -z "$PRIVATE_KEY_FILE" ]] && ![[ -z "$KEY_PAIR" ]]; then
+    printf '%s\n' 'myria-deploy: You must specify --key-pair if you specify --private-key-file' >&2
+    exit 1
+fi
+
+if ! [[ -z "$PROFILE" ]]; then
+    PROFILE_ARGS="--profile $PROFILE"
+    ANSIBLE_ENV_VARS="PROFILE=$PROFILE"
+fi
+
+if [[ -z "$REGION" ]]; then
+    REGION="$DEFAULT_REGION"
+fi
+
+if [[ -z "$KEY_PAIR" ]]; then
+    KEY_PAIR="$DEFAULT_KEY_PAIR"
+fi
+
+if [[ -z "$PRIVATE_KEY_FILE" ]]; then
+    PRIVATE_KEY_FILE="$DEFAULT_PRIVATE_KEY_FILE"
+fi
+
+if [[ -z "$INSTANCE_TYPE" ]]; then
+    INSTANCE_TYPE="$DEFAULT_INSTANCE_TYPE"
+fi
+
+if [[ -z "$CLUSTER_SIZE" ]]; then
+    CLUSTER_SIZE="$DEFAULT_CLUSTER_SIZE"
+fi
+
+if [[ -z "$AMI_ID" ]]; then
+    AMI_ID="$DEFAULT_AMI_ID"
+fi
+
+# Force all commands to redirect their stderr to a custom file descriptor,
+# which we redirect to our stderr or /dev/null depending on verbose setting.
+if [ "$VERBOSE" == "1" ]; then
+    exec 3> /dev/stderr
+else
+    exec 3> /dev/null
+fi
+
+ANSIBLE_ENV_VARS="$ANSIBLE_ENV_VARS REGION=$REGION KEY_PAIR=$KEY_PAIR INSTANCE_TYPE=$INSTANCE_TYPE CLUSTER_SIZE=$CLUSTER_SIZE AMI_ID=$AMI_ID"
+
+# check for python on the path
+if ! which python > /dev/null; then
+    printf '%s\n' 'myria-deploy: Python not installed!' '' 'Please install the latest version of Python 2.7 from' 'https://www.python.org/downloads/' >&2
+    exit 1
+fi
+
+# check for python 2.7+
+PYTHON_VERSION=$(python --version 2>&1)
+if [[ $PYTHON_VERSION == "Python 3"* ]]; then
+    printf '%s\n' 'myria-deploy: Python 3 is not supported!' >&2
+    exit 1
+fi
+if [[ $PYTHON_VERSION != "Python 2.7"* ]]; then
+    printf '%s\n' 'myria-deploy: Python must be version 2.7.0 or above!' >&2
+    exit 1
+fi
+
+# check that pip is installed
+if ! which pip > /dev/null; then
+    printf '%s\n' 'myria-deploy: pip not installed!' '' 'Please install the latest version of pip:' 'https://pip.pypa.io/en/stable/installing/' >&2
+    exit 1
+fi
+
+# check that AWS CLI is installed
+if ! which aws > /dev/null; then
+    printf '%s\n' 'myria-deploy: AWS CLI not installed!' '' 'Please install the latest version of the AWS CLI:' 'http://docs.aws.amazon.com/cli/latest/userguide/installing.html' >&2
+    exit 1
+fi
+
+
+# create new EC2 keypair if it doesn't exist and save the private key
+if ! aws $PROFILE_ARGS ec2 describe-key-pairs --key-name "$KEY_PAIR" > /dev/null 2>&3; then
+    echo "Creating new EC2 key pair $KEY_PAIR" >&2
+    if ! aws $PROFILE_ARGS ec2 create-key-pair --key-name "$KEY_PAIR" --query 'KeyMaterial' --output text > "$PRIVATE_KEY_FILE" 2>&3; then
+        printf '%s\n' "Failed to create EC2 key pair $KEY_PAIR" >&2
+        exit 1
+    fi
+    if ! chmod 400 "$PRIVATE_KEY_FILE"; then
+        printf '%s\n' "Failed to set permissions on private key file $PRIVATE_KEY_FILE" >&2
+        exit 1
+    fi
+fi
+
+# check if ansible is installed (prefer homebrew/apt/yum install if possible?)
+if ! which ansible-playbook > /dev/null; then
+    echo "Installing Ansible (requires root privileges)" >&2
+    (sudo bash -c "pip install ansible") 2>&3
+fi
+
+# Check if this file lives inside a git repo. If not, clone the repo to a temporary location.
+if [ -d "$SCRIPT_PATH/.git" ]; then
+    MYRIA_ANSIBLE_DIR="$SCRIPT_PATH"
+else
+    echo "Cloning $MYRIA_ANSIBLE_REPO repo into $MYRIA_ANSIBLE_TMPDIR" >&2
+    rm -rf "$MYRIA_ANSIBLE_TMPDIR" 2>&3
+    if ! git clone -b "$MYRIA_ANSIBLE_BRANCH" "https://github.com/$MYRIA_ANSIBLE_REPO.git" "$MYRIA_ANSIBLE_TMPDIR" 2>&3; then
+        printf '%s\n' "Failed to clone $MYRIA_ANSIBLE_REPO repo into $MYRIA_ANSIBLE_TMPDIR" >&2
+        exit 1
+    fi
+    MYRIA_ANSIBLE_DIR="$MYRIA_ANSIBLE_TMPDIR"
+fi
+echo "Provisioning cluster..." >&2
+ANSIBLE_OUTPUT=$(ansible-playbook $MYRIA_ANSIBLE_DIR/myria.yml --extra-vars "$ANSIBLE_ENV_VARS" --private-key "$PRIVATE_KEY_FILE" 2>&1 | tee >(cat - >&3))
+if [ $? -ne 0 ]; then
+    printf '%s\n' "Ansible deployment failed:" '' "$ANSIBLE_OUTPUT" >&2
+    exit 1
+fi
+
+MYRIA_WEB_URL=$(cat $HOME/myria-web.url)
+printf '%s\n' 'myria-deploy: SUCCESS' '' "myria-web interface available at $MYRIA_WEB_URL" >&2
+exit 0

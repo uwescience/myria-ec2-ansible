@@ -4,12 +4,13 @@
   hosts: localhost
   gather_facts: False
   vars:
-    key_name: "{{ KEY_NAME }}"
-    instance_type: t2.large
-    instance_count: 5
+    profile: "{{ PROFILE }}"
+    keypair: "{{ KEY_PAIR }}"
+    instance_type: "{{ INSTANCE_TYPE }}"
+    instance_count: "{{ CLUSTER_SIZE }}"
     security_group: default
-    image: ami-5189a661
-    region: us-west-2
+    image: "{{ AMI_ID }}"
+    region: "{{ REGION }}"
     wait_timeout: 600
   tasks:
   - name: Create security group  #so we can ssh into the instance from our laptop
@@ -65,16 +66,17 @@
 
   - name: Launch instance
     ec2:
-      keypair: "{{key_name}}"
+      profile: "{{profile | default(omit)}}"
+      keypair: "{{keypair}}"
       group_id: "{{basic_firewall.group_id}}"
       instance_type: "{{instance_type}}"
       image: "{{image}}"
       count: "{{instance_count}}"
       wait: true
       wait_timeout: "{{wait_timeout}}"
-      region: "{{region}}"
+      region: "{{region | default(omit)}}"
       instance_tags:
-        Name: "{{ lookup('env', 'USER') }}-{{ key_name }}"
+        Name: "{{ keypair }}-myria"
       volumes:
       - device_name: /dev/sdb
         volume_size: 20
@@ -178,5 +180,4 @@
 - name: display URL of remote myria-web instance
   hosts: localhost
   tasks:
-    - debug: msg="http://{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }}:{{ myria_web_port }}"
-
+    - shell: "echo http://{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }}:{{ myria_web_port }} > $HOME/myria-web.url"
