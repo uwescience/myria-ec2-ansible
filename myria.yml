@@ -2,81 +2,68 @@
 ##ansible-playbook myria.yml "-e KEY_NAME=parmita-keypair"
 - name: Create AWS resources
   hosts: localhost
+  connection: local
   gather_facts: False
   vars:
-    profile: "{{ PROFILE }}"
-    keypair: "{{ KEY_PAIR }}"
-    instance_type: "{{ INSTANCE_TYPE }}"
-    instance_count: "{{ CLUSTER_SIZE }}"
-    security_group: default
-    image: "{{ AMI_ID }}"
-    region: "{{ REGION }}"
     wait_timeout: 600
   tasks:
   - name: Create security group  #so we can ssh into the instance from our laptop
     ec2_group:
       name: myriasec
       description: "Myria security group"
-      region: "{{region}}"
+      region: "{{REGION}}"
+      profile: "{{PROFILE | default(omit)}}"
       rules:
       - proto: all
         from_port: 0
         to_port: 65535
         group_name: myriasec
       - proto: tcp
-        type: ssh
         from_port: 22
         to_port: 22
         cidr_ip: 0.0.0.0/0
       - proto: tcp
-        type: http
         from_port: 80
         to_port: 80
         cidr_ip: 0.0.0.0/0
       - proto: tcp
-        type: https
         from_port: 443
         to_port: 443
         cidr_ip: 0.0.0.0/0
       - proto: tcp
-        type: myria
         from_port: "{{myria_rest_port}}"
         to_port: "{{myria_rest_port}}"
         cidr_ip: 0.0.0.0/0
       - proto: tcp
-        type: myria-web
         from_port: "{{myria_web_port}}"
         to_port: "{{myria_web_port}}"
         cidr_ip: 0.0.0.0/0
       - proto: tcp
-        type: resourcemanager-ui
         from_port: 8088
         to_port: 8088
         cidr_ip: 0.0.0.0/0
       - proto: tcp
-        type: nodemanager-ui
         from_port: 8042
         to_port: 8042
         cidr_ip: 0.0.0.0/0
       rules_egress:
       - proto: all
-        type: all
         cidr_ip: 0.0.0.0/0
     register: basic_firewall
 
   - name: Launch instance
     ec2:
-      profile: "{{profile | default(omit)}}"
-      keypair: "{{keypair}}"
+      profile: "{{PROFILE | default(omit)}}"
+      keypair: "{{KEY_PAIR}}"
       group_id: "{{basic_firewall.group_id}}"
-      instance_type: "{{instance_type}}"
-      image: "{{image}}"
-      count: "{{instance_count}}"
+      instance_type: "{{INSTANCE_TYPE}}"
+      image: "{{AMI_ID}}"
+      count: "{{CLUSTER_SIZE}}"
       wait: true
       wait_timeout: "{{wait_timeout}}"
-      region: "{{region | default(omit)}}"
+      region: "{{REGION}}"
       instance_tags:
-        Name: "{{ keypair }}-myria"
+        Name: "{{ KEY_PAIR }}-myria"
       volumes:
       - device_name: /dev/sdb
         volume_size: 20
@@ -179,5 +166,6 @@
 
 - name: display URL of remote myria-web instance
   hosts: localhost
+  connection: local
   tasks:
     - shell: "echo http://{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }}:{{ myria_web_port }} > $HOME/myria-web.url"

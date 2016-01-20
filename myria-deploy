@@ -10,20 +10,36 @@ MYRIA_ANSIBLE_TMPDIR="/tmp/myria-ec2-ansible"
 
 DEFAULT_REGION="us-west-2"
 DEFAULT_KEY_PAIR="$USER-myria"
-DEFAULT_PRIVATE_KEY_FILE="$HOME/.ssh/$DEFAULT_KEY_PAIR.pem"
 DEFAULT_INSTANCE_TYPE="t2.large"
 DEFAULT_CLUSTER_SIZE=5
 DEFAULT_AMI_ID="ami-5189a661"
+
+read -r -d '' USAGE <<EOF
+myria-deploy [options]
+options:
+--verbose
+--profile <defaults to none>
+--key-pair <defaults to $DEFAULT_KEY_PAIR>
+--private-key-file <defaults to $HOME/.ssh/$DEFAULT_KEY_PAIR.pem>
+--region <defaults to $DEFAULT_REGION>
+--instance-type <defaults to $DEFAULT_INSTANCE_TYPE>
+--cluster-size <defaults to $DEFAULT_CLUSTER_SIZE>
+--ami-id <defaults to $DEFAULT_AMI_ID>
+EOF
 
 # Use > 1 to consume two arguments per pass in the loop (i.e. each
 # argument has a corresponding value to go with it).
 # Use > 0 to consume one or more arguments per pass in the loop (i.e.
 # some arguments don't have a corresponding value).
-while [[ $# > 1 ]]
+while [[ $# > 0 ]]
 do
 opt="$1"
 
 case $opt in
+    -h|--help)
+    echo "$USAGE" >&2
+    exit 1
+    ;;
     -v|--verbose)
     VERBOSE=1
     ;;
@@ -62,20 +78,7 @@ esac
 shift # past argument or value
 done
 
-USAGE=<<EOF
-myria-deploy [options]
-options:
---verbose
---profile <defaults to none>
---key-pair <defaults to $DEFAULT_KEY_PAIR>
---private-key-file <defaults to $HOME/.ssh/$DEFAULT_KEY_PAIR.pem>
---region <defaults to $DEFAULT_REGION>
---instance-type <defaults to $DEFAULT_INSTANCE_TYPE>
---cluster-size <defaults to $DEFAULT_CLUSTER_SIZE>
---ami-id <defaults to $DEFAULT_AMI_ID>
-EOF
-
-if [[ -z "$PRIVATE_KEY_FILE" ]] && ![[ -z "$KEY_PAIR" ]]; then
+if ! [[ -z "$PRIVATE_KEY_FILE" ]] && [[ -z "$KEY_PAIR" ]]; then
     printf '%s\n' 'myria-deploy: You must specify --key-pair if you specify --private-key-file' >&2
     exit 1
 fi
@@ -94,7 +97,7 @@ if [[ -z "$KEY_PAIR" ]]; then
 fi
 
 if [[ -z "$PRIVATE_KEY_FILE" ]]; then
-    PRIVATE_KEY_FILE="$DEFAULT_PRIVATE_KEY_FILE"
+    PRIVATE_KEY_FILE="$HOME/.ssh/$KEY_PAIR.pem"
 fi
 
 if [[ -z "$INSTANCE_TYPE" ]]; then
@@ -136,6 +139,12 @@ if [[ $PYTHON_VERSION != "Python 2.7"* ]]; then
     exit 1
 fi
 
+# check that git is installed
+if ! which git > /dev/null; then
+    printf '%s\n' 'myria-deploy: git not installed!' '' 'Please install the latest version of git:' 'https://git-scm.com/book/en/v2/Getting-Started-Installing-Git' >&2
+    exit 1
+fi
+
 # check that pip is installed
 if ! which pip > /dev/null; then
     printf '%s\n' 'myria-deploy: pip not installed!' '' 'Please install the latest version of pip:' 'https://pip.pypa.io/en/stable/installing/' >&2
@@ -148,11 +157,44 @@ if ! which aws > /dev/null; then
     exit 1
 fi
 
+# check that boto is installed
+if ! python -c "import boto" 2> /dev/null; then
+    echo "Installing boto (requires root privileges)" >&2
+    (sudo bash -c "pip install boto") 2>&3
+fi
+
+# check that Ansible is installed (we can't do this for the user because `pip install` doesn't work)
+if ! which ansible-playbook > /dev/null; then
+    printf '%s\n' 'myria-deploy: Ansible not installed!' '' 'Please install the latest version of Ansible:' 'http://docs.ansible.com/ansible/intro_installation.html#installing-the-control-machine' >&2
+    exit 1
+fi
+
+# check for ansible 1.6+
+ANSIBLE_VERSION=$(ansible --version 2>&1)
+if [[ $ANSIBLE_VERSION != "ansible 1."[6,7,8,9]* ]] && [[ $ANSIBLE_VERSION != "ansible 2."* ]]; then
+    printf '%s\n' 'myria-deploy: Ansible version must be 1.6+' '' "$ANSIBLE_VERSION" >&2
+    exit 1
+fi
+
+# Ansible requires some "fake" inventory to use with transient EC2 deployments.
+echo "Adding localhost to Ansible inventory" >&2
+cat <<EOF | sudo tee /etc/ansible/hosts >&3
+[local]
+127.0.0.1
+EOF
+
+# Disable host key checking to avoid spurious prompts for ssh to localhost
+echo "Disabling Ansible host key checking" >&2
+sudo sed -i 's|^#host_key_checking|host_key_checking|g' /etc/ansible/ansible.cfg
 
 # create new EC2 keypair if it doesn't exist and save the private key
-if ! aws $PROFILE_ARGS ec2 describe-key-pairs --key-name "$KEY_PAIR" > /dev/null 2>&3; then
+if ! aws $PROFILE_ARGS --region "$REGION" ec2 describe-key-pairs --key-name "$KEY_PAIR" > /dev/null 2>&3; then
     echo "Creating new EC2 key pair $KEY_PAIR" >&2
-    if ! aws $PROFILE_ARGS ec2 create-key-pair --key-name "$KEY_PAIR" --query 'KeyMaterial' --output text > "$PRIVATE_KEY_FILE" 2>&3; then
+    if [ -e $PRIVATE_KEY_FILE ]; then
+        echo "Deleting existing private key file $PRIVATE_KEY_FILE" >&2
+        rm -f "$PRIVATE_KEY_FILE"
+    fi
+    if ! aws $PROFILE_ARGS --region "$REGION" ec2 create-key-pair --key-name "$KEY_PAIR" --query 'KeyMaterial' --output text > "$PRIVATE_KEY_FILE" 2>&3; then
         printf '%s\n' "Failed to create EC2 key pair $KEY_PAIR" >&2
         exit 1
     fi
@@ -160,12 +202,6 @@ if ! aws $PROFILE_ARGS ec2 describe-key-pairs --key-name "$KEY_PAIR" > /dev/null
         printf '%s\n' "Failed to set permissions on private key file $PRIVATE_KEY_FILE" >&2
         exit 1
     fi
-fi
-
-# check if ansible is installed (prefer homebrew/apt/yum install if possible?)
-if ! which ansible-playbook > /dev/null; then
-    echo "Installing Ansible (requires root privileges)" >&2
-    (sudo bash -c "pip install ansible") 2>&3
 fi
 
 # Check if this file lives inside a git repo. If not, clone the repo to a temporary location.
