@@ -26,3 +26,8 @@ Run the wrapper script `myria-deploy`, which will check for dependencies, instal
 ```
 ./myria-deploy --profile myria --key-pair tdbaker --private-key-file ~/.ssh/tdbaker.pem
 ```
+Note that the `myria-deploy` script can be run in isolation, without cloning this repo. It will clone the repo to a temporary location if it's not already present. The script itself can be downloaded from
+
+```
+https://raw.githubusercontent.com/uwescience/myria-ec2-ansible/reef/myria-deploy
+```
