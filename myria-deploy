@@ -2,6 +2,10 @@
 
 set -o pipefail
 
+# for binaries installed with `pip install --user`
+export PATH="$PATH:$HOME/.local/bin"
+export ANSIBLE_HOST_KEY_CHECKING=False
+
 SCRIPT_PATH="$( cd "$(dirname "$0")" ; pwd -P )"
 
 MYRIA_ANSIBLE_REPO="uwescience/myria-ec2-ansible"
@@ -44,34 +48,63 @@ case $opt in
     VERBOSE=1
     ;;
     -p|--profile)
+    if [[ -z "$2" ]]; then
+        echo "$USAGE" >&2
+        exit 1
+    fi
     PROFILE="$2"
     shift # past argument
     ;;
     -k|--key-pair)
+    if [[ -z "$2" ]]; then
+        echo "$USAGE" >&2
+        exit 1
+    fi
     KEY_PAIR="$2"
     shift # past argument
     ;;
     -f|--private-key-file)
+    if [[ -z "$2" ]]; then
+        echo "$USAGE" >&2
+        exit 1
+    fi
     PRIVATE_KEY_FILE="$2"
     shift # past argument
     ;;
     -r|--region)
+    if [[ -z "$2" ]]; then
+        echo "$USAGE" >&2
+        exit 1
+    fi
     REGION="$2"
+    shift # past argument
     ;;
     -s|--cluster-size)
+    if [[ -z "$2" ]]; then
+        echo "$USAGE" >&2
+        exit 1
+    fi
     CLUSTER_SIZE="$2"
     shift # past argument
     ;;
     -t|--instance-type)
+    if [[ -z "$2" ]]; then
+        echo "$USAGE" >&2
+        exit 1
+    fi
     INSTANCE_TYPE="$2"
     shift # past argument
     ;;
     -a|--ami-id)
+    if [[ -z "$2" ]]; then
+        echo "$USAGE" >&2
+        exit 1
+    fi
     AMI_ID="$2"
     shift # past argument
     ;;
     *)
-        echo $USAGE >&2
+        echo "$USAGE" >&2
         exit 1
     ;;
 esac
@@ -85,7 +118,8 @@ fi
 
 if ! [[ -z "$PROFILE" ]]; then
     PROFILE_ARGS="--profile $PROFILE"
-    ANSIBLE_ENV_VARS="PROFILE=$PROFILE"
+    ANSIBLE_VARS="$ANSIBLE_VARS PROFILE=$PROFILE"
+    DEFAULT_KEY_PAIR="$DEFAULT_KEY_PAIR-$PROFILE"
 fi
 
 if [[ -z "$REGION" ]]; then
@@ -120,7 +154,7 @@ else
     exec 3> /dev/null
 fi
 
-ANSIBLE_ENV_VARS="$ANSIBLE_ENV_VARS REGION=$REGION KEY_PAIR=$KEY_PAIR INSTANCE_TYPE=$INSTANCE_TYPE CLUSTER_SIZE=$CLUSTER_SIZE AMI_ID=$AMI_ID"
+ANSIBLE_VARS="$ANSIBLE_VARS REGION=$REGION KEY_PAIR=$KEY_PAIR INSTANCE_TYPE=$INSTANCE_TYPE CLUSTER_SIZE=$CLUSTER_SIZE AMI_ID=$AMI_ID"
 
 # check for python on the path
 if ! which python > /dev/null; then
@@ -139,34 +173,68 @@ if [[ $PYTHON_VERSION != "Python 2.7"* ]]; then
     exit 1
 fi
 
+# check that C compiler is available
+if ! which gcc > /dev/null; then
+    printf '%s\n' 'myria-deploy: No C compiler found!' '' >&2
+    if [[ $(uname -a) == *"Ubuntu"* ]]; then
+        printf '%s\n' 'Please install the build-essential package:' 'sudo apt-get install build-essential' >&2
+    elif [[ $(uname -a) == *"Darwin"* ]]; then
+        printf '%s\n' 'Please install the Xcode command line tools:' 'xcode-select --install' >&2
+    else
+        printf '%s\n' 'Please install the package for your distribution containing the GNU C Compiler (gcc)' >&2
+    fi
+    exit 1
+fi
+
+# check that python header files are installed
+if ! ls -d /usr/include/python2.7 > /dev/null; then
+    printf '%s\n' 'myria-deploy: python header files not installed!' ''
+    if [[ $(uname -a) == *"Ubuntu"* ]]; then
+        printf '%s\n' 'Please install the python-dev package:' 'sudo apt-get install python-dev' >&2
+    else
+        printf '%s\n' 'Please install the package for your distribution containing the Python header files' >&2
+    fi
+    exit 1
+fi
+
 # check that git is installed
 if ! which git > /dev/null; then
-    printf '%s\n' 'myria-deploy: git not installed!' '' 'Please install the latest version of git:' 'https://git-scm.com/book/en/v2/Getting-Started-Installing-Git' >&2
+    printf '%s\n' 'myria-deploy: git not installed!' ''
+    if [[ $(uname -a) == *"Ubuntu"* ]]; then
+        printf '%s\n' 'Please install the git package:' 'sudo apt-get install git' >&2
+    else
+        printf '%s\n' 'Please install the latest version of git:' 'https://git-scm.com/book/en/v2/Getting-Started-Installing-Git' >&2
+    fi
     exit 1
 fi
 
 # check that pip is installed
 if ! which pip > /dev/null; then
-    printf '%s\n' 'myria-deploy: pip not installed!' '' 'Please install the latest version of pip:' 'https://pip.pypa.io/en/stable/installing/' >&2
+    printf '%s\n' 'myria-deploy: pip not installed!' ''
+    if [[ $(uname -a) == *"Ubuntu"* ]]; then
+        printf '%s\n' 'Please install the pip package:' 'sudo apt-get install python-pip' >&2
+    else
+        printf '%s\n' 'Please install the latest version of pip:' 'https://pip.pypa.io/en/stable/installing/' >&2
+    fi
     exit 1
 fi
 
 # check that AWS CLI is installed
 if ! which aws > /dev/null; then
-    printf '%s\n' 'myria-deploy: AWS CLI not installed!' '' 'Please install the latest version of the AWS CLI:' 'http://docs.aws.amazon.com/cli/latest/userguide/installing.html' >&2
+    printf '%s\n' 'myria-deploy: AWS CLI not installed!' '' 'Please install the AWS CLI:' 'http://docs.aws.amazon.com/cli/latest/userguide/installing.html' 'obtain your AWS credentials:' 'http://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html' 'and run `aws configure`:' 'http://docs.aws.amazon.com/cli/latest/userguide/cli-chap-getting-started.html' '' >&2
     exit 1
 fi
 
 # check that boto is installed
 if ! python -c "import boto" 2> /dev/null; then
-    echo "Installing boto (requires root privileges)" >&2
-    (sudo bash -c "pip install boto") 2>&3
+    echo "Installing boto" >&2
+    pip install --user boto 2>&3
 fi
 
-# check that Ansible is installed (we can't do this for the user because `pip install` doesn't work)
+# check that Ansible is installed
 if ! which ansible-playbook > /dev/null; then
-    printf '%s\n' 'myria-deploy: Ansible not installed!' '' 'Please install the latest version of Ansible:' 'http://docs.ansible.com/ansible/intro_installation.html#installing-the-control-machine' >&2
-    exit 1
+    echo "Installing ansible" >&2
+    pip install --user ansible 2>&3
 fi
 
 # check for ansible 1.6+
@@ -175,17 +243,6 @@ if [[ $ANSIBLE_VERSION != "ansible 1."[6,7,8,9]* ]] && [[ $ANSIBLE_VERSION != "a
     printf '%s\n' 'myria-deploy: Ansible version must be 1.6+' '' "$ANSIBLE_VERSION" >&2
     exit 1
 fi
-
-# Ansible requires some "fake" inventory to use with transient EC2 deployments.
-echo "Adding localhost to Ansible inventory" >&2
-cat <<EOF | sudo tee /etc/ansible/hosts >&3
-[local]
-127.0.0.1
-EOF
-
-# Disable host key checking to avoid spurious prompts for ssh to localhost
-echo "Disabling Ansible host key checking" >&2
-sudo sed -i 's|^#host_key_checking|host_key_checking|g' /etc/ansible/ansible.cfg
 
 # create new EC2 keypair if it doesn't exist and save the private key
 if ! aws $PROFILE_ARGS --region "$REGION" ec2 describe-key-pairs --key-name "$KEY_PAIR" > /dev/null 2>&3; then
@@ -200,6 +257,12 @@ if ! aws $PROFILE_ARGS --region "$REGION" ec2 describe-key-pairs --key-name "$KE
     fi
     if ! chmod 400 "$PRIVATE_KEY_FILE"; then
         printf '%s\n' "Failed to set permissions on private key file $PRIVATE_KEY_FILE" >&2
+        exit 1
+    fi
+else
+    # fail if the keypair exists but the corresponding private key file doesn't
+    if ! [ -e $PRIVATE_KEY_FILE ]; then
+        printf '%s\n' "EC2 key pair $KEY_PAIR exists but private key file $PRIVATE_KEY_FILE is missing!" >&2
         exit 1
     fi
 fi
@@ -217,7 +280,7 @@ else
     MYRIA_ANSIBLE_DIR="$MYRIA_ANSIBLE_TMPDIR"
 fi
 echo "Provisioning cluster..." >&2
-ANSIBLE_OUTPUT=$(ansible-playbook $MYRIA_ANSIBLE_DIR/myria.yml --extra-vars "$ANSIBLE_ENV_VARS" --private-key "$PRIVATE_KEY_FILE" 2>&1 | tee >(cat - >&3))
+ANSIBLE_OUTPUT="$(ansible-playbook -i "$MYRIA_ANSIBLE_DIR/hosts" "$MYRIA_ANSIBLE_DIR/myria.yml" --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE" 2>&1 | tee >(cat - >&3))"
 if [ $? -ne 0 ]; then
     printf '%s\n' "Ansible deployment failed:" '' "$ANSIBLE_OUTPUT" >&2
     exit 1
