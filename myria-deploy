@@ -3,7 +3,7 @@
 set -o pipefail
 
 # for binaries installed with `pip install --user`
-export PATH="$PATH:$HOME/.local/bin"
+export PATH="$HOME/.local/bin:$PATH"
 export ANSIBLE_HOST_KEY_CHECKING=False
 
 SCRIPT_PATH="$( cd "$(dirname "$0")" ; pwd -P )"
@@ -187,8 +187,13 @@ if ! which gcc > /dev/null; then
 fi
 
 # check that python header files are installed
-if ! ls -d /usr/include/python2.7 > /dev/null; then
-    printf '%s\n' 'myria-deploy: python header files not installed!' ''
+if [[ $(uname -a) == *"Darwin"* ]]; then
+    if ! ls -d '/System/Library/Frameworks/Python.framework/Versions/2.7/include/python2.7' > /dev/null; then
+        printf '%s\n' 'myria-deploy: python header files not installed!' '' 'Please install the Xcode command line tools:' 'xcode-select --install' >&2
+        exit 1
+    fi
+elif ! ls -d '/usr/include/python2.7' > /dev/null; then
+    printf '%s\n' 'myria-deploy: python header files not installed!' '' >&2
     if [[ $(uname -a) == *"Ubuntu"* ]]; then
         printf '%s\n' 'Please install the python-dev package:' 'sudo apt-get install python-dev' >&2
     else
