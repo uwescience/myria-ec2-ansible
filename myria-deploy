@@ -18,6 +18,8 @@ DEFAULT_INSTANCE_TYPE="t2.large"
 DEFAULT_CLUSTER_SIZE=5
 DEFAULT_AMI_ID="ami-5189a661"
 
+ANSIBLE_VARS="hosts=localhost ansible_python_interpreter='/usr/bin/env python'"
+
 read -r -d '' USAGE <<EOF
 myria-deploy [options]
 options:
@@ -285,13 +287,8 @@ else
     MYRIA_ANSIBLE_DIR="$MYRIA_ANSIBLE_TMPDIR"
 fi
 
-# Create an inventory file containing just localhost, with the python interpreter explicitly configured to be the one in the current PATH (ansible is hardcoded to use /usr/bin/python)
-echo "Creating inventory file" >&2
-cp "$MYRIA_ANSIBLE_DIR/hosts.template" "$MYRIA_ANSIBLE_DIR/hosts" 2>&3
-sed -i -e "s|__DEFAULT_PYTHON__|$(which python 2>&3)|" "$MYRIA_ANSIBLE_DIR/hosts" 2>&3
-
 echo "Provisioning cluster..." >&2
-ANSIBLE_OUTPUT="$(ansible-playbook -i "$MYRIA_ANSIBLE_DIR/hosts" "$MYRIA_ANSIBLE_DIR/myria.yml" --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE" 2>&1 | tee >(cat - >&3))"
+ANSIBLE_OUTPUT="$(ansible-playbook "$MYRIA_ANSIBLE_DIR/myria.yml" --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE" 2>&1 | tee >(cat - >&3))"
 if [ $? -ne 0 ]; then
     printf '%s\n' "Ansible deployment failed:" '' "$ANSIBLE_OUTPUT" >&2
     exit 1
