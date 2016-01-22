@@ -4,4 +4,8 @@ database_name: myria
 database_username: uwdb # Myria currently requires a postgres user named 'uwdb'
 database_password: uwdb # TODO: Fix me :(
 postgres_version: 9.4
-myria_path: /mnt/myria 
+postgres_locale: 'en_US.UTF-8'
+postgres_encoding: 'UTF-8'
+postgres_cluster_name: myria
+postgres_data_root: '/mnt/postgresql'
+postgres_data_dir: '{{postgres_data_root}}/{{postgres_version}}/{{postgres_cluster_name}}'

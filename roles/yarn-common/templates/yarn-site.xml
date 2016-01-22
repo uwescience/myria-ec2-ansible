@@ -85,6 +85,6 @@
 
   <property>
    <name>yarn.nodemanager.local-dirs</name>
-   <value>/mnt/nm-local</value>
+   <value>{{ yarn_nm_dir }}</value>
   </property>
 </configuration>

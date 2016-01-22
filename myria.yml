@@ -66,7 +66,7 @@
         Name: "{{ KEY_PAIR }}-myria"
       volumes:
       - device_name: /dev/sdb
-        volume_size: 20
+        volume_size: "{{ DATA_VOLUME_SIZE_GB }}"
         delete_on_termination: true
     register: ec2
 

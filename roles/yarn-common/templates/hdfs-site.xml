@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+
+<!-- Put site-specific property overrides in this file. -->
+
+<configuration>
+    <property>
+        <name>dfs.namenode.name.dir</name>
+        <value>file://{{ hdfs_namenode_data_dir }}</value>
+    </property>
+    <property>
+        <name>dfs.datanode.data.dir</name>
+        <value>file://{{ hdfs_datanode_data_dir }}</value>
+    </property>
+    <property>
+        <name>dfs.replication</name>
+        <value>{{ hdfs_replication_factor }}</value>
+    </property>
+</configuration>

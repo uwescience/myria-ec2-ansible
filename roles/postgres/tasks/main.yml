@@ -51,14 +51,38 @@
     - db
     - deps
 
-- name: altering postgres conf- adding listeners 
-  lineinfile: dest=/etc/postgresql/{{postgres_version}}/main/postgresql.conf
+- name: make sure the postgres data directory exists
+  sudo: yes
+  file:
+    path: '{{ postgres_data_dir }}'
+    owner: postgres
+    group: postgres
+    state: directory
+    recurse: yes
+    mode: 0700
+
+- name: reset the cluster - drop the existing one
+  shell: 'pg_dropcluster --stop {{ postgres_version }} main'
+  become_user: postgres
+
+- name: reset the cluster - create a new one (with specified encoding and locale)
+  shell: 'pg_createcluster --start --locale {{ postgres_locale }} -e {{ postgres_encoding }} -d {{ postgres_data_dir }} {{ postgres_version }} {{ postgres_cluster_name }}'
+  become_user: postgres
+
+- name: altering postgres.conf- adding listeners
+  lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/postgresql.conf
                 regexp="^listen_addresses"
                 line="listen_addresses = '*'" state=present
                 backup=yes
 
-- name: altering pg_hba.conf- adding listeners 
-  lineinfile: dest=/etc/postgresql/{{postgres_version}}/main/pg_hba.conf
+# - name: altering postgres.conf- changing data directory
+#   lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/postgresql.conf
+#                 regexp="^data_directory"
+#                 line="data_directory = '{{postgres_data_dir}}'" state=present
+#                 backup=yes
+
+- name: altering pg_hba.conf- adding listeners
+  lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/pg_hba.conf
                 line="host    all   all        0.0.0.0/0   md5" state=present
                 backup=yes
 
@@ -69,12 +93,6 @@
 - name: Create database user
   postgresql_user: db={{database_name}} name={{database_username}} password={{database_password}} priv=ALL
   become_user: postgres
-
-- name: Create Myria group
-  group: name=myria state=present
-
-- name: Create worker directory
-  file: path={{myria_path}} state=directory owner={{myria_user}} group=myria mode=0775
 
 - name: Restart Postgres
   service: name=postgresql state=restarted

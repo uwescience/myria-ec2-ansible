@@ -7,6 +7,12 @@
   with_items:
     - git
 
+- name: Create Myria group
+  group: name=myria state=present
+
+- name: Create worker directory
+  file: path={{myria_path}} state=directory owner={{myria_user}} group=myria mode=0775
+
 - name: Clone Myria repository
   sudo: no
   git: repo="{{myria_repository_url}}"

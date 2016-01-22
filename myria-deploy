@@ -17,6 +17,7 @@ DEFAULT_KEY_PAIR="$USER-myria"
 DEFAULT_INSTANCE_TYPE="t2.large"
 DEFAULT_CLUSTER_SIZE=5
 DEFAULT_AMI_ID="ami-5189a661"
+DEFAULT_DATA_VOLUME_SIZE_GB=20
 
 ANSIBLE_VARS="hosts=localhost ansible_python_interpreter='/usr/bin/env python'"
 
@@ -31,6 +32,7 @@ options:
 --instance-type <defaults to $DEFAULT_INSTANCE_TYPE>
 --cluster-size <defaults to $DEFAULT_CLUSTER_SIZE>
 --ami-id <defaults to $DEFAULT_AMI_ID>
+--data-volume-size-gb <defaults to $DEFAULT_DATA_VOLUME_SIZE_GB>
 EOF
 
 # Use > 1 to consume two arguments per pass in the loop (i.e. each
@@ -105,6 +107,14 @@ case $opt in
     AMI_ID="$2"
     shift # past argument
     ;;
+    -v|--data-volume-size-gb)
+    if [[ -z "$2" ]]; then
+        echo "$USAGE" >&2
+        exit 1
+    fi
+    DATA_VOLUME_SIZE_GB="$2"
+    shift # past argument
+    ;;
     *)
         echo "$USAGE" >&2
         exit 1
@@ -148,6 +158,10 @@ if [[ -z "$AMI_ID" ]]; then
     AMI_ID="$DEFAULT_AMI_ID"
 fi
 
+if [[ -z "$DATA_VOLUME_SIZE_GB" ]]; then
+    DATA_VOLUME_SIZE_GB="$DEFAULT_DATA_VOLUME_SIZE_GB"
+fi
+
 # Force all commands to redirect their stderr to a custom file descriptor,
 # which we redirect to our stderr or /dev/null depending on verbose setting.
 if [ "$VERBOSE" == "1" ]; then
@@ -156,7 +170,7 @@ else
     exec 3> /dev/null
 fi
 
-ANSIBLE_VARS="$ANSIBLE_VARS REGION=$REGION KEY_PAIR=$KEY_PAIR INSTANCE_TYPE=$INSTANCE_TYPE CLUSTER_SIZE=$CLUSTER_SIZE AMI_ID=$AMI_ID"
+ANSIBLE_VARS="$ANSIBLE_VARS REGION=$REGION KEY_PAIR=$KEY_PAIR INSTANCE_TYPE=$INSTANCE_TYPE CLUSTER_SIZE=$CLUSTER_SIZE AMI_ID=$AMI_ID DATA_VOLUME_SIZE_GB=$DATA_VOLUME_SIZE_GB"
 
 # check for python on the path
 if ! which python > /dev/null; then
