@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source {{ common['soft_link_base_path'] }}/hadoop/env.sh
+source {{ soft_link_base_path }}/hadoop/env.sh
 
 {% raw %}
 ${HADOOP_HOME}/sbin/yarn-daemon.sh stop resourcemanager

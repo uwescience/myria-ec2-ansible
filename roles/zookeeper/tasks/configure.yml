@@ -4,7 +4,7 @@
 
   # Updating Configuration File in Zookeeper.
   - name: Updating Configuration File in Zookeeper.
-    template: src={{ item }} dest={{ common['soft_link_base_path'] }}/zookeeper/conf/{{ item }}  owner={{ zookeeper_user }} group={{ zookeeper_group }}
+    template: src={{ item }} dest={{ soft_link_base_path }}/zookeeper/conf/{{ item }}  owner={{ zookeeper_user }} group={{ zookeeper_group }}
     with_items:
       - zoo.cfg
       - log4j.properties

@@ -1,19 +1,13 @@
 # --------------------------------------
-# EC2 DEPLOYMENT VARIABLES
-# --------------------------------------
-new_pub_key: ~/.ssh/id_rsa_new.pub
-new_priv_key: ~/.ssh/id_rsa_new
-remote_new_priv_key: ~/.ssh/id_rsa
-
-# --------------------------------------
-# COMMON FOR INSTALL PATH
+# Install Variables
 # --------------------------------------
 
-# Common Location information.
-common:
-  install_base_path: /usr/local
-  soft_link_base_path: /opt
-
+data_vol_device_name: /dev/sdb
+data_vol_storage_type: gp2
+data_vol_fs_type: ext4
+data_vol_mount_dir: /mnt
+install_base_path: /usr/local
+soft_link_base_path: /opt
 
 # --------------------------------------
 # ZK VARIABLES

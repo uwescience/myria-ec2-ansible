@@ -10,14 +10,14 @@
   sudo: yes
 
 - name: Unarchive Hadoop in install folder
-  unarchive: creates="{{ hadoop_install_path }}" copy=no src="{{ hadoop_download_path }}" dest="{{ common['install_base_path'] }}" owner={{ hadoop_user }} group={{ hadoop_group }}
+  unarchive: creates="{{ hadoop_install_path }}" copy=no src="{{ hadoop_download_path }}" dest="{{ install_base_path }}" owner={{ hadoop_user }} group={{ hadoop_group }}
   sudo: yes
 
 - name: Create directories
   file: path={{ item.path }} state=directory mode={{ item.mode }}
   with_items:
-          - { path: "{{ common['install_base_path'] }}/hadoop-{{ hadoop_version }}/pbin", mode: '0755' }
-          - { path: "{{ common['install_base_path'] }}/hadoop-{{ hadoop_version }}/etc/hadoop", mode: '0755' }
+          - { path: "{{ install_base_path }}/hadoop-{{ hadoop_version }}/pbin", mode: '0755' }
+          - { path: "{{ install_base_path }}/hadoop-{{ hadoop_version }}/etc/hadoop", mode: '0755' }
           - { path: "{{ cgroups_mount_dir }}", mode: '0755' }
           - { path: "{{ cgroups_mount_dir }}/cpu", mode: '0755' }
           - { path: "{{ cgroups_mount_dir }}/net_cls", mode: '0755' }
@@ -26,10 +26,10 @@
           - { path: "{{ hdfs_datanode_data_dir }}", mode: '0755' }
 
 - name: Change Directory Permissions.
-  file: path={{ common['install_base_path'] }}/hadoop-{{ hadoop_version }} owner={{ hadoop_user }} group={{ hadoop_group }} recurse=yes
+  file: path={{ install_base_path }}/hadoop-{{ hadoop_version }} owner={{ hadoop_user }} group={{ hadoop_group }} recurse=yes
 
-- name: Creating a Symbolic Link in {{ common['soft_link_base_path'] }}/hadoop.
-  file: src={{ common['install_base_path'] }}/hadoop-{{ hadoop_version }} path={{ common['soft_link_base_path'] }}/hadoop state=link owner={{ hadoop_user }} group={{ hadoop_group }}
+- name: Creating a Symbolic Link in {{ soft_link_base_path }}/hadoop.
+  file: src={{ install_base_path }}/hadoop-{{ hadoop_version }} path={{ soft_link_base_path }}/hadoop state=link owner={{ hadoop_user }} group={{ hadoop_group }}
 
 - name: Change Directory Permissions.
   file: path={{ item.path }} owner={{ hadoop_user }} group={{ hadoop_group }} mode={{ item.mode }} recurse=yes
@@ -39,22 +39,22 @@
           - { path: "{{ hdfs_datanode_data_dir }}", mode: '0755' }
 
 - name: Copying templated provisioning scripts
-  template: src={{ item.src }} dest="{{ common['install_base_path'] }}/hadoop-{{ hadoop_version }}/pbin" mode=0755
+  template: src={{ item.src }} dest="{{ install_base_path }}/hadoop-{{ hadoop_version }}/pbin" mode=0755
   with_items:
           - { src: 'hadoop-config.sh', dest: 'hadoop-config.sh' }
           - { src: 'provision-hadoop.sh', dest: 'provision-hadoop.sh' }
 
 - name: Copying templated control scripts
-  template: src={{ item.src }} dest="{{ common['install_base_path'] }}/hadoop-{{ hadoop_version }}/pbin" mode=0755
+  template: src={{ item.src }} dest="{{ install_base_path }}/hadoop-{{ hadoop_version }}/pbin" mode=0755
   with_items:
           - { src: 'restart-hadoop-master-daemons.sh', dest: 'restart-hadoop-master-daemons.sh' }
           - { src: 'restart-hadoop-slave-daemons.sh', dest: 'restart-hadoop-slave-daemons.sh' }
 
 - name: Change Directory Permissions.
-  file: path={{ common['install_base_path'] }}/hadoop-{{ hadoop_version }}/pbin owner={{ hadoop_user }} group={{ hadoop_group }} recurse=yes
+  file: path={{ install_base_path }}/hadoop-{{ hadoop_version }}/pbin owner={{ hadoop_user }} group={{ hadoop_group }} recurse=yes
 
 - name: Copying configuration/archive/control scripts
-  template: src={{ item.src }} dest="{{ common['install_base_path'] }}/hadoop-{{ hadoop_version }}/etc/hadoop" mode={{ item.mode }}
+  template: src={{ item.src }} dest="{{ install_base_path }}/hadoop-{{ hadoop_version }}/etc/hadoop" mode={{ item.mode }}
   with_items:
           - { src: 'container-executor.cfg', mode: '0644' }
           - { src: 'capacity-scheduler.xml', mode: '0644' }
@@ -64,5 +64,5 @@
           - { src: 'hdfs-site.xml', mode: '0644'  }
 
 - name: Provision Hadoop 
-  shell: "{{ common['soft_link_base_path'] }}/hadoop/pbin/provision-hadoop.sh"
+  shell: "{{ soft_link_base_path }}/hadoop/pbin/provision-hadoop.sh"
   sudo: yes

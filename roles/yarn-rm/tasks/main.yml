@@ -1,5 +1,5 @@
 ---
 - name: Provision master
-  shell: "{{ common['soft_link_base_path'] }}/hadoop/pbin/restart-hadoop-master-daemons.sh"
+  shell: "{{ soft_link_base_path }}/hadoop/pbin/restart-hadoop-master-daemons.sh"
   sudo: yes
   sudo_user: "{{ hadoop_user }}"

@@ -1,7 +1,9 @@
 ---
-- name: disable ssh host key checking # this is excessive, fix this to be restricted to the list of IPs deployed
-  shell: (echo Host *; echo StrictHostKeyChecking no; echo UserKnownHostsFile=/dev/null) >> /etc/ssh/ssh_config
-  sudo: yes
+- name: format attached EBS data volume
+  filesystem: fstype={{ data_vol_fs_type }} dev={{ data_vol_real_device_name }}
+
+- name: mount attached EBS data volume
+  mount: name={{ data_vol_mount_dir }} src={{ data_vol_real_device_name }} fstype={{ data_vol_fs_type }} opts=rw,noatime state=mounted
 
 - name: add Java8 PPA
   apt_repository: repo='ppa:webupd8team/java'

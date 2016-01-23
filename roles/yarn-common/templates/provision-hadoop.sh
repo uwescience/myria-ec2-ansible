@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SCRIPT_DIR={{ common['soft_link_base_path'] }}/hadoop/pbin
+SCRIPT_DIR={{ soft_link_base_path }}/hadoop/pbin
 MASTER_IP={{ hostvars[groups['rmnode_private'][0]].inventory_hostname }}
 NUM_SLAVES={{ groups['nmnodes_private'] | length }}
 SLAVE_IPS={% set comma = joiner(",") %}

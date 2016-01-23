@@ -75,12 +75,6 @@
                 line="listen_addresses = '*'" state=present
                 backup=yes
 
-# - name: altering postgres.conf- changing data directory
-#   lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/postgresql.conf
-#                 regexp="^data_directory"
-#                 line="data_directory = '{{postgres_data_dir}}'" state=present
-#                 backup=yes
-
 - name: altering pg_hba.conf- adding listeners
   lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/pg_hba.conf
                 line="host    all   all        0.0.0.0/0   md5" state=present

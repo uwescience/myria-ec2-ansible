@@ -65,8 +65,9 @@
       instance_tags:
         Name: "{{ KEY_PAIR }}-myria"
       volumes:
-      - device_name: /dev/sdb
+      - device_name: "{{ data_vol_device_name }}"
         volume_size: "{{ DATA_VOLUME_SIZE_GB }}"
+        volume_type: "{{ data_vol_storage_type }}"
         delete_on_termination: true
     register: ec2
 

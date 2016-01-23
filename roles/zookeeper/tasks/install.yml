@@ -5,12 +5,12 @@
 
   # unarchive - Copy tgz file and extract in destination.
   - name: Copy and UnArchive the Package in Destination Server.
-    unarchive: creates={{ common['install_base_path'] }}/{{ zookeeper_version }} src=/mnt/{{ zookeeper_version }}.tar.gz dest={{ common['install_base_path'] }} owner={{ zookeeper_user }} group={{ zookeeper_group }} copy=no
+    unarchive: creates={{ install_base_path }}/{{ zookeeper_version }} src=/mnt/{{ zookeeper_version }}.tar.gz dest={{ install_base_path }} owner={{ zookeeper_user }} group={{ zookeeper_group }} copy=no
 
   # Changing permission to directory, setting `zookeeper_user` as the new owner.
   - name: Change Directory Permissions.
-    file: path={{ common['install_base_path'] }}/{{ zookeeper_version }} owner={{ zookeeper_user }} group={{ zookeeper_group }} recurse=yes
+    file: path={{ install_base_path }}/{{ zookeeper_version }} owner={{ zookeeper_user }} group={{ zookeeper_group }} recurse=yes
 
   # Creating Symbolic link.
-  - name: Creating a Symbolic Link in {{ common['install_base_path'] }}/zookeeper.
-    file: src={{ common['install_base_path'] }}/{{ zookeeper_version }} path={{ common['soft_link_base_path'] }}/zookeeper state=link owner={{ zookeeper_user }} group={{ zookeeper_group }}
+  - name: Creating a Symbolic Link in {{ install_base_path }}/zookeeper.
+    file: src={{ install_base_path }}/{{ zookeeper_version }} path={{ soft_link_base_path }}/zookeeper state=link owner={{ zookeeper_user }} group={{ zookeeper_group }}

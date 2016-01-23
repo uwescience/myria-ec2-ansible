@@ -1,5 +1,5 @@
 ---
 - name: Provision slave 
-  shell: "{{ common['soft_link_base_path'] }}/hadoop/pbin/restart-hadoop-slave-daemons.sh"
+  shell: "{{ soft_link_base_path }}/hadoop/pbin/restart-hadoop-slave-daemons.sh"
   sudo: yes
   sudo_user: "{{ hadoop_user }}"

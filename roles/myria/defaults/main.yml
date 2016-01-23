@@ -1,7 +1,7 @@
 ---
 #default vairables use for setting up myria
 myria_repository_url: https://github.com/uwescience/myria.git
-myria_path: /mnt/myria
+myria_path: '{{data_vol_mount_dir}}/myria'
 myria_branch: reef
 namenode_port: 8020
 coordinator_port: 8001
