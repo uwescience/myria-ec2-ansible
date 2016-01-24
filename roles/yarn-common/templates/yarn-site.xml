@@ -74,6 +74,16 @@
   </property>
 
   <property>
+    <name>yarn.nodemanager.resource.memory-mb</name>
+    <value>{{ (1024 * (node_mem_gb | float)) | int }}</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.resource.cpu-vcores</name>
+    <value>{{ node_vcores }}</value>
+  </property>
+
+  <property>
     <name>yarn.log-aggregation-enable</name>
     <value>false</value>
   </property>

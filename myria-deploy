@@ -18,6 +18,10 @@ DEFAULT_INSTANCE_TYPE="t2.large"
 DEFAULT_CLUSTER_SIZE=5
 DEFAULT_AMI_ID="ami-5189a661"
 DEFAULT_DATA_VOLUME_SIZE_GB=20
+DEFAULT_WORKER_MEM_GB=4
+DEFAULT_WORKER_VCORES=1
+DEFAULT_NODE_MEM_GB=8
+DEFAULT_NODE_VCORES=2
 
 ANSIBLE_VARS="hosts=localhost ansible_python_interpreter='/usr/bin/env python'"
 
@@ -33,6 +37,10 @@ options:
 --cluster-size <defaults to $DEFAULT_CLUSTER_SIZE>
 --ami-id <defaults to $DEFAULT_AMI_ID>
 --data-volume-size-gb <defaults to $DEFAULT_DATA_VOLUME_SIZE_GB>
+--worker-mem-gb <defaults to $DEFAULT_WORKER_MEM_GB>
+--worker-vcores- <defaults to $DEFAULT_WORKER_VCORES>
+--node-mem-gb <defaults to $DEFAULT_NODE_MEM_GB>
+--node-vcores- <defaults to $DEFAULT_NODE_VCORES>
 EOF
 
 # Use > 1 to consume two arguments per pass in the loop (i.e. each
@@ -115,6 +123,38 @@ case $opt in
     DATA_VOLUME_SIZE_GB="$2"
     shift # past argument
     ;;
+    -wm|--worker-mem-gb)
+    if [[ -z "$2" ]]; then
+        echo "$USAGE" >&2
+        exit 1
+    fi
+    WORKER_MEM_GB="$2"
+    shift # past argument
+    ;;
+    -wv|--worker-vcores)
+    if [[ -z "$2" ]]; then
+        echo "$USAGE" >&2
+        exit 1
+    fi
+    WORKER_VCORES="$2"
+    shift # past argument
+    ;;
+    -nm|--node-mem-gb)
+    if [[ -z "$2" ]]; then
+        echo "$USAGE" >&2
+        exit 1
+    fi
+    NODE_MEM_GB="$2"
+    shift # past argument
+    ;;
+    -nv|--node-vcores)
+    if [[ -z "$2" ]]; then
+        echo "$USAGE" >&2
+        exit 1
+    fi
+    NODE_VCORES="$2"
+    shift # past argument
+    ;;
     *)
         echo "$USAGE" >&2
         exit 1
@@ -162,6 +202,22 @@ if [[ -z "$DATA_VOLUME_SIZE_GB" ]]; then
     DATA_VOLUME_SIZE_GB="$DEFAULT_DATA_VOLUME_SIZE_GB"
 fi
 
+if [[ -z "$WORKER_MEM_GB" ]]; then
+    WORKER_MEM_GB="$DEFAULT_WORKER_MEM_GB"
+fi
+
+if [[ -z "$WORKER_VCORES" ]]; then
+    WORKER_VCORES="$DEFAULT_WORKER_VCORES"
+fi
+
+if [[ -z "$NODE_MEM_GB" ]]; then
+    NODE_MEM_GB="$DEFAULT_NODE_MEM_GB"
+fi
+
+if [[ -z "$NODE_VCORES" ]]; then
+    NODE_VCORES="$DEFAULT_NODE_VCORES"
+fi
+
 # Force all commands to redirect their stderr to a custom file descriptor,
 # which we redirect to our stderr or /dev/null depending on verbose setting.
 if [ "$VERBOSE" == "1" ]; then
@@ -170,7 +226,7 @@ else
     exec 3> /dev/null
 fi
 
-ANSIBLE_VARS="$ANSIBLE_VARS REGION=$REGION KEY_PAIR=$KEY_PAIR INSTANCE_TYPE=$INSTANCE_TYPE CLUSTER_SIZE=$CLUSTER_SIZE AMI_ID=$AMI_ID DATA_VOLUME_SIZE_GB=$DATA_VOLUME_SIZE_GB"
+ANSIBLE_VARS="$ANSIBLE_VARS REGION=$REGION KEY_PAIR=$KEY_PAIR INSTANCE_TYPE=$INSTANCE_TYPE CLUSTER_SIZE=$CLUSTER_SIZE AMI_ID=$AMI_ID DATA_VOLUME_SIZE_GB=$DATA_VOLUME_SIZE_GB WORKER_MEM_GB=$WORKER_MEM_GB WORKER_VCORES=$WORKER_VCORES NODE_MEM_GB=$NODE_MEM_GB NODE_VCORES=$NODE_VCORES"
 
 # check for python on the path
 if ! which python > /dev/null; then
