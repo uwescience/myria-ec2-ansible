@@ -13,32 +13,37 @@ For the purposes of setting up MyriaX on EC2, we assume you are using your lapto
    Ansible provides a number of core modules for AWS. We use several of these modules to setup MyriaX on AWS. The requirments for this are minimal.
    Authentication with the AWS-related modules is handled by either specifying your access and secret key as ENV variables or module arguments. You need access key ID and secret for AWS. Here is a [link to AWS documentation](http://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html), on how to get the access key and secret. Once you have these values, set them up as ENV variables:
 
+    ```config
     export AWS_ACCESS_KEY_ID='AK123'
-
     export AWS_SECRET_ACCESS_KEY='abc123'
+    ```
 
 *  __AWS keypair__
-   You will need a keypair to provision EC2 instances. If you do not have a keypair, [create one now](http://docs.aws.amazon.com/gettingstarted/latest/wah/getting-started-prereq.html#create-a-key-pair).  Download the .pem file to your control machine. Using an SSH agent is the best way to authenticate with your end nodes, as this alleviates the need to copy your .pem files around. ssh-add your ec2 keypair.
+   You will need a keypair to provision EC2 instances. If you do not have a keypair, [create one now](http://docs.aws.amazon.com/gettingstarted/latest/wah/getting-started-prereq.html#create-a-key-pair).  Download the `.pem` file to your control machine. Using an SSH agent is the best way to authenticate with your end nodes, as this alleviates the need to copy your `.pem` files around. ssh-add your ec2 keypair.
 
-    ssh-add ~/.ssh/keypair.pem 
+    `ssh-add ~/.ssh/keypair.pem`
 
 
 *  __Get the Ansible Playbook__
-   Get the ansible scripts from  git by cloning https://github.com/parmitam/myria-ec2-ansible.git
+   Get the ansible scripts from git by cloning `https://github.com/parmitam/myria-ec2-ansible.git`
 
 *  __Deploy__
-   Run the ansibleplaybook with the following command
+   Run the ansibleplaybook with the following command:
+   ```
    ansible-playbook myria.yml "-e KEY_NAME=__<your keypair name>__" 
+   ```
 
 
 ## Ansible Inventory Error
 In case ansible complains that there is no inventory/hosts file, follow
 these steps (tested on Linux Arch).
 * Download the two files at: 
-https://raw.githubusercontent.com/ansible/ansible/devel/contrib/inventory/ec2.py
-https://raw.githubusercontent.com/ansible/ansible/devel/contrib/inventory/ec2.ini
-* Place them in the ansible configuration folder (/etc/ansible).
-* Make the python script executable (chmod +x ec2.py)
-* When deploying the ansible playbook add -i /etc/ansible/ec2.py as in:
+  * https://raw.githubusercontent.com/ansible/ansible/devel/contrib/inventory/ec2.py
+  * https://raw.githubusercontent.com/ansible/ansible/devel/contrib/inventory/ec2.ini
+* Place them in the ansible configuration folder (`/etc/ansible`).
+* Make the python script executable (`chmod +x ec2.py`)
+* When deploying the ansible playbook add `-i /etc/ansible/ec2.py` to the launch command:
 
+```
 ansible-playbook nmyria.yml "-e KEY_NAME=__your keypair name__" -i /etc/ansible/ec2.py
+```
