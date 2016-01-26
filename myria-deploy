@@ -365,5 +365,6 @@ if [ $? -ne 0 ]; then
 fi
 
 MYRIA_WEB_URL=$(cat $HOME/myria-web.url)
-printf '%s\n' 'myria-deploy: SUCCESS' '' "myria-web interface available at $MYRIA_WEB_URL" >&2
+MYRIA_REST_URL=$(cat $HOME/myria-rest.url)
+printf '%s\n' 'myria-deploy: SUCCESS' '' "myria-web interface available at $MYRIA_WEB_URL" "MyriaX REST endpoint available at $MYRIA_REST_URL" >&2
 exit 0

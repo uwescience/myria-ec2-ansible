@@ -170,3 +170,4 @@
   connection: local
   tasks:
     - shell: "echo http://{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }}:{{ myria_web_port }} > $HOME/myria-web.url"
+    - shell: "echo http://{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }}:{{ myria_rest_port }} > $HOME/myria-rest.url"
