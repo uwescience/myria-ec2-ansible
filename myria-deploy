@@ -339,7 +339,7 @@ if ! aws $PROFILE_ARGS --region "$REGION" ec2 describe-key-pairs --key-name "$KE
         printf '%s\n' "Failed to create EC2 key pair $KEY_PAIR" >&2
         exit 1
     fi
-    if ! chmod 400 "$PRIVATE_KEY_FILE"; then
+    if ! chmod 600 "$PRIVATE_KEY_FILE"; then
         printf '%s\n' "Failed to set permissions on private key file $PRIVATE_KEY_FILE" >&2
         exit 1
     fi
