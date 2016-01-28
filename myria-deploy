@@ -308,6 +308,13 @@ if ! python -c "import boto" 2> /dev/null; then
     pip install --user boto 2>&3
 fi
 
+# check for boto 2.33+
+BOTO_VERSION=$(python -c "import boto; print boto.__version__")
+if [[ $BOTO_VERSION != "2.3"[3,4,5,6,7,8,9]* ]] && [[ $BOTO_VERSION != "2."[4,5,6,7,8,9]* ]]; then
+    printf '%s\n' 'myria-deploy: boto version must be 2.33+' '' "boto $BOTO_VERSION" >&2
+    exit 1
+fi
+
 # check that Ansible is installed
 if ! which ansible-playbook > /dev/null; then
     echo "Installing ansible" >&2
