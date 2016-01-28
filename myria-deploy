@@ -366,5 +366,7 @@ fi
 
 MYRIA_WEB_URL=$(cat $HOME/myria-web.url)
 MYRIA_REST_URL=$(cat $HOME/myria-rest.url)
-printf '%s\n' 'myria-deploy: SUCCESS' '' "myria-web interface available at $MYRIA_WEB_URL" "MyriaX REST endpoint available at $MYRIA_REST_URL" >&2
+MYRIA_SSH_USER_HOST=$(cat $HOME/myria-ssh-user-host.txt)
+MYRIA_SSH_CMD="ssh -i $PRIVATE_KEY_FILE $MYRIA_SSH_USER_HOST"
+printf '%s\n' 'myria-deploy: SUCCESS' '' "myria-web interface available at $MYRIA_WEB_URL" "MyriaX REST endpoint available at $MYRIA_REST_URL" '' "Log into coordinator:" "$MYRIA_SSH_CMD" >&2
 exit 0

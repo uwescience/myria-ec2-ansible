@@ -165,9 +165,10 @@
     - gae
     - myria-web
 
-- name: display URL of remote myria-web instance
+- name: display connection information for coordinator
   hosts: localhost
   connection: local
   tasks:
     - shell: "echo http://{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }}:{{ myria_web_port }} > $HOME/myria-web.url"
     - shell: "echo http://{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }}:{{ myria_rest_port }} > $HOME/myria-rest.url"
+    - shell: "echo {{ myria_user }}@{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }} > $HOME/myria-ssh-user-host.txt"
