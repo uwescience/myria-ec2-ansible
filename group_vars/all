@@ -50,7 +50,7 @@ container_executor: org.apache.hadoop.yarn.server.nodemanager.LinuxContainerExec
 cgroups_mount_enable: true
 cgroups_mount_dir: /sys/fs/cgroup
 
-yarn_log_level: DEBUG
+yarn_log_level: WARN
 
 #----------------------------------
 #   Myria Variables
