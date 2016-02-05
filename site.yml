@@ -58,6 +58,7 @@
       group_id: "{{basic_firewall.group_id}}"
       instance_type: "{{INSTANCE_TYPE}}"
       image: "{{AMI_ID}}"
+      instance_profile_name: "{{ROLE | default(omit)}}"
       count: "{{CLUSTER_SIZE}}"
       wait: true
       wait_timeout: "{{wait_timeout}}"
