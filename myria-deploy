@@ -9,7 +9,7 @@ export ANSIBLE_HOST_KEY_CHECKING=False
 SCRIPT_PATH="$( cd "$(dirname "$0")" ; pwd -P )"
 
 MYRIA_ANSIBLE_REPO="uwescience/myria-ec2-ansible"
-MYRIA_ANSIBLE_BRANCH="reef"
+MYRIA_ANSIBLE_BRANCH="master"
 MYRIA_ANSIBLE_TMPDIR="/tmp/myria-ec2-ansible"
 
 DEFAULT_REGION="us-west-2"
