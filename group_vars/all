@@ -40,7 +40,7 @@ hadoop_user: hdadmin
 hadoop_group: hdadmin
 hadoop_password: $6$rounds=40000$1qjG/hovLZOkcerH$CK4Or3w8rR3KabccowciZZUeD.nIwR/VINUa2uPsmGK/2xnmOt80TjDwbof9rNvnYY6icCkdAR2qrFquirBtT1
 
-hadoop_version: 2.6.3
+hadoop_version: 2.7.2
 
 routing_network_interface: eth1
 ansible_routing_network_interface: ansible_eth1
