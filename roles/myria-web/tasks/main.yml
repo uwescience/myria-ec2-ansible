@@ -32,4 +32,4 @@
   template: src=service.conf.j2 dest=/etc/init/myria-web.conf backup=yes mode=0644
 
 - name: Ensure myria-web service is started
-  action: service name=myria-web state=started
+  service: name=myria-web state=running enabled=yes

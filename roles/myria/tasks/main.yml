@@ -46,4 +46,4 @@
   template: src=service.conf.j2 dest=/etc/init/myria.conf backup=yes mode=0644
 
 - name: Ensure Myria service is started
-  action: service name=myria state=started
+  service: name=myria state=running enabled=yes

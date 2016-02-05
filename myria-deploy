@@ -365,7 +365,7 @@ else
 fi
 
 echo "Provisioning cluster..." >&2
-ANSIBLE_OUTPUT="$(ansible-playbook "$MYRIA_ANSIBLE_DIR/myria.yml" --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE" 2>&1 | tee >(cat - >&3))"
+ANSIBLE_OUTPUT="$(ansible-playbook "$MYRIA_ANSIBLE_DIR/site.yml" --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE" 2>&1 | tee >(cat - >&3))"
 if [ $? -ne 0 ]; then
     printf '%s\n' "Ansible deployment failed:" '' "$ANSIBLE_OUTPUT" >&2
     exit 1
