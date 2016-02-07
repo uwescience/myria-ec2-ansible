@@ -31,7 +31,7 @@ options:
 --verbose
 --profile <defaults to none>
 --key-pair <defaults to $DEFAULT_KEY_PAIR>
---private-key-file <defaults to $HOME/.ssh/$DEFAULT_KEY_PAIR.pem>
+--private-key-file <defaults to $HOME/.ssh/${DEFAULT_KEY_PAIR}_${DEFAULT_REGION}.pem>
 --region <defaults to $DEFAULT_REGION>
 --instance-type <defaults to $DEFAULT_INSTANCE_TYPE>
 --cluster-size <defaults to $DEFAULT_CLUSTER_SIZE>
@@ -192,7 +192,7 @@ if [[ -z "$KEY_PAIR" ]]; then
 fi
 
 if [[ -z "$PRIVATE_KEY_FILE" ]]; then
-    PRIVATE_KEY_FILE="$HOME/.ssh/$KEY_PAIR.pem"
+    PRIVATE_KEY_FILE="$HOME/.ssh/${KEY_PAIR}_${REGION}.pem"
 fi
 
 if [[ -z "$INSTANCE_TYPE" ]]; then
@@ -343,13 +343,18 @@ fi
 
 # create new EC2 keypair if it doesn't exist and save the private key
 if ! aws $PROFILE_ARGS --region "$REGION" ec2 describe-key-pairs --key-name "$KEY_PAIR" > /dev/null 2>&3; then
-    echo "Creating new EC2 key pair $KEY_PAIR" >&2
+    echo "Creating new EC2 key pair $KEY_PAIR in region $REGION" >&2
     if [ -e $PRIVATE_KEY_FILE ]; then
-        echo "Deleting existing private key file $PRIVATE_KEY_FILE" >&2
-        rm -f "$PRIVATE_KEY_FILE"
+        echo "Renaming existing private key file $PRIVATE_KEY_FILE to ${PRIVATE_KEY_FILE}.old" >&2
+        mv -f "$PRIVATE_KEY_FILE" "${PRIVATE_KEY_FILE}.old"
     fi
-    if ! aws $PROFILE_ARGS --region "$REGION" ec2 create-key-pair --key-name "$KEY_PAIR" --query 'KeyMaterial' --output text > "$PRIVATE_KEY_FILE" 2>&3; then
-        printf '%s\n' "Failed to create EC2 key pair $KEY_PAIR" >&2
+    TMP_PRIVATE_KEY_FILE="/tmp/`basename $PRIVATE_KEY_FILE`"
+    if ! aws $PROFILE_ARGS --region "$REGION" ec2 create-key-pair --key-name "$KEY_PAIR" --query 'KeyMaterial' --output text > "$TMP_PRIVATE_KEY_FILE" 2>&3; then
+        printf '%s\n' "Failed to create EC2 key pair $KEY_PAIR in region $REGION" >&2
+        exit 1
+    fi
+    if ! mv -f "$TMP_PRIVATE_KEY_FILE" "$PRIVATE_KEY_FILE"; then
+        printf '%s\n' "Failed to move temporary private key file $TMP_PRIVATE_KEY_FILE to $PRIVATE_KEY_FILE" >&2
         exit 1
     fi
     if ! chmod 600 "$PRIVATE_KEY_FILE"; then
@@ -359,7 +364,7 @@ if ! aws $PROFILE_ARGS --region "$REGION" ec2 describe-key-pairs --key-name "$KE
 else
     # fail if the keypair exists but the corresponding private key file doesn't
     if ! [ -e $PRIVATE_KEY_FILE ]; then
-        printf '%s\n' "EC2 key pair $KEY_PAIR exists but private key file $PRIVATE_KEY_FILE is missing!" >&2
+        printf '%s\n' "EC2 key pair $KEY_PAIR exists but private key file $PRIVATE_KEY_FILE is missing!" "Please delete the key pair $KEY_PAIR from the $REGION region or copy its private key to $PRIVATE_KEY_FILE." >&2
         exit 1
     fi
 fi
