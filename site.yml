@@ -13,6 +13,7 @@
       description: "Myria security group"
       region: "{{REGION}}"
       profile: "{{PROFILE | default(omit)}}"
+      vpc_id: "{{VPC_ID | default(omit)}}"
       rules:
       - proto: all
         from_port: 0

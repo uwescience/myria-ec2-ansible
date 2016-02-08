@@ -36,6 +36,7 @@ options:
 --instance-type <defaults to $DEFAULT_INSTANCE_TYPE>
 --cluster-size <defaults to $DEFAULT_CLUSTER_SIZE>
 --ami-id <defaults to $DEFAULT_AMI_ID>
+--vpc-id <defaults to none>
 --role <defaults to none>
 --data-volume-size-gb <defaults to $DEFAULT_DATA_VOLUME_SIZE_GB>
 --worker-mem-gb <defaults to $DEFAULT_WORKER_MEM_GB>
@@ -114,6 +115,14 @@ case $opt in
         exit 1
     fi
     AMI_ID="$2"
+    shift # past argument
+    ;;
+    -vpc|--vpc-id)
+    if [[ -z "$2" ]]; then
+        echo "$USAGE" >&2
+        exit 1
+    fi
+    VPC_ID="$2"
     shift # past argument
     ;;
     -l|--role)
@@ -205,6 +214,10 @@ fi
 
 if [[ -z "$AMI_ID" ]]; then
     AMI_ID="$DEFAULT_AMI_ID"
+fi
+
+if ! [[ -z "$VPC_ID" ]]; then
+    ANSIBLE_VARS="$ANSIBLE_VARS VPC_ID=$VPC_ID"
 fi
 
 if ! [[ -z "$ROLE" ]]; then
