@@ -12,6 +12,9 @@ MYRIA_ANSIBLE_REPO="uwescience/myria-ec2-ansible"
 MYRIA_ANSIBLE_BRANCH="master"
 MYRIA_ANSIBLE_TMPDIR="/tmp/myria-ec2-ansible"
 
+VIRTUALENV_VERSION=14.0.6
+MYRIA_VIRTUALENV_TMPDIR="/tmp/myria-virtualenv"
+
 DEFAULT_REGION="us-west-2"
 DEFAULT_KEY_PAIR="$USER-myria"
 DEFAULT_INSTANCE_TYPE="t2.large"
@@ -328,10 +331,45 @@ if ! which aws > /dev/null; then
     exit 1
 fi
 
+# download virtualenv
+VIRTUALENV_PACKAGE="virtualenv-${VIRTUALENV_VERSION}"
+VIRTUALENV_TARBALL="${VIRTUALENV_PACKAGE}.tar.gz"
+VIRTUALENV_DOWNLOAD_URL="https://pypi.python.org/packages/source/v/virtualenv/${VIRTUALENV_TARBALL}"
+VIRTUALENV_TARBALL_PATH="/tmp/${VIRTUALENV_TARBALL}"
+VIRTUALENV_SRC_DIR="/tmp/${VIRTUALENV_PACKAGE}"
+if ! curl -o "$VIRTUALENV_TARBALL_PATH" "$VIRTUALENV_DOWNLOAD_URL" 2>&3; then
+    printf '%s\n' "Failed to download package $VIRTUALENV_PACKAGE from $VIRTUALENV_DOWNLOAD_URL" >&2
+    exit 1
+fi
+if ! mkdir -p "$VIRTUALENV_SRC_DIR" 2>&3; then
+    printf '%s\n' "Failed to create virtualenv source directory $VIRTUALENV_SRC_DIR" >&2
+    exit 1
+fi
+if ! tar xvfz "$VIRTUALENV_TARBALL_PATH" -C `dirname $VIRTUALENV_SRC_DIR` 2>&3; then
+    printf '%s\n' "Failed to unpack virtualenv archive $VIRTUALENV_TARBALL_PATH" >&2
+    exit 1
+fi
+
+# create Python virtual environment
+if [ -d "$MYRIA_VIRTUALENV_TMPDIR" ]; then
+    printf '%s\n' "Removing existing virtualenv directory $MYRIA_VIRTUALENV_TMPDIR" >&3
+    rm -rf "$MYRIA_VIRTUALENV_TMPDIR" 2>&3
+fi
+if ! python "$VIRTUALENV_SRC_DIR/virtualenv.py" --verbose "$MYRIA_VIRTUALENV_TMPDIR" >&3 2>&3; then
+    printf '%s\n' "Creating virtual environment $MYRIA_VIRTUALENV_TMPDIR failed" >&2
+    exit 1
+fi
+
+# activate Python virtual environment
+if ! source "$MYRIA_VIRTUALENV_TMPDIR/bin/activate" >&3 2>&3; then
+    printf '%s\n' "Activating virtual environment $MYRIA_VIRTUALENV_TMPDIR failed" >&2
+    exit 1
+fi
+
 # check that boto is installed
 if ! python -c "import boto" 2> /dev/null; then
     echo "Installing boto" >&2
-    pip install --user boto 2>&3
+    pip install --verbose boto >&3 2>&3
 fi
 
 # check for boto 2.33+
@@ -344,7 +382,7 @@ fi
 # check that Ansible is installed
 if ! which ansible-playbook > /dev/null; then
     echo "Installing ansible" >&2
-    pip install --user ansible 2>&3
+    pip install --verbose ansible >&3 2>&3
 fi
 
 # check for ansible 1.6+
@@ -386,7 +424,7 @@ fi
 if [ -d "$SCRIPT_PATH/.git" ]; then
     MYRIA_ANSIBLE_DIR="$SCRIPT_PATH"
 else
-    echo "Cloning $MYRIA_ANSIBLE_REPO repo into $MYRIA_ANSIBLE_TMPDIR" >&2
+    echo "Cloning $MYRIA_ANSIBLE_REPO repo into $MYRIA_ANSIBLE_TMPDIR" >&3
     rm -rf "$MYRIA_ANSIBLE_TMPDIR" 2>&3
     if ! git clone -b "$MYRIA_ANSIBLE_BRANCH" "https://github.com/$MYRIA_ANSIBLE_REPO.git" "$MYRIA_ANSIBLE_TMPDIR" 2>&3; then
         printf '%s\n' "Failed to clone $MYRIA_ANSIBLE_REPO repo into $MYRIA_ANSIBLE_TMPDIR" >&2
@@ -401,6 +439,9 @@ if [ $? -ne 0 ]; then
     printf '%s\n' "Ansible deployment failed:" '' "$ANSIBLE_OUTPUT" >&2
     exit 1
 fi
+
+# deactivate Python virtual environment
+deactivate
 
 MYRIA_WEB_URL=$(cat $HOME/myria-web.url)
 MYRIA_REST_URL=$(cat $HOME/myria-rest.url)
