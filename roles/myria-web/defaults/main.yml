@@ -2,3 +2,5 @@
 #default variables used for setting up myria-web
 myria_web_repository_url: 'https://github.com/uwescience/myria-web.git'
 myria_web_path: '{{data_vol_mount_dir}}/myria-web'
+myria_web_branch: master
+raco_branch: tipsy

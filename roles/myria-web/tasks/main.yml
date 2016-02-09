@@ -13,7 +13,13 @@
 
 - name: Clone myria-web repository
   sudo: no
-  git: repo="{{myria_web_repository_url}}" dest="{{myria_web_path}}" recursive=yes
+  git: repo="{{myria_web_repository_url}}" dest="{{myria_web_path}}" version="{{myria_web_branch}}" recursive=yes
+
+- name: Change raco branch
+  shell: "git checkout {{raco_branch}}"
+  sudo: no
+  args:
+    chdir: "{{myria_web_path}}/submodules/raco"
 
 - name: Setup raco
   shell: "python setup.py install"
