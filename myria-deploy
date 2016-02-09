@@ -45,7 +45,7 @@ options:
 --worker-mem-gb <defaults to $DEFAULT_WORKER_MEM_GB>
 --worker-vcores <defaults to $DEFAULT_WORKER_VCORES>
 --node-mem-gb <defaults to $DEFAULT_NODE_MEM_GB>
---node-vcores- <defaults to $DEFAULT_NODE_VCORES>
+--node-vcores <defaults to $DEFAULT_NODE_VCORES>
 EOF
 
 # Use > 1 to consume two arguments per pass in the loop (i.e. each
