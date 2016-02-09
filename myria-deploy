@@ -43,7 +43,7 @@ options:
 --role <defaults to none>
 --data-volume-size-gb <defaults to $DEFAULT_DATA_VOLUME_SIZE_GB>
 --worker-mem-gb <defaults to $DEFAULT_WORKER_MEM_GB>
---worker-vcores- <defaults to $DEFAULT_WORKER_VCORES>
+--worker-vcores <defaults to $DEFAULT_WORKER_VCORES>
 --node-mem-gb <defaults to $DEFAULT_NODE_MEM_GB>
 --node-vcores- <defaults to $DEFAULT_NODE_VCORES>
 EOF
