@@ -84,6 +84,16 @@
   </property>
 
   <property>
+    <name>yarn.scheduler.maximum-allocation-mb</name>
+    <value>{{ (1024 * (container_mem_gb | float)) | int }}</value>
+  </property>
+
+  <property>
+    <name>yarn.scheduler.maximum-allocation-vcores</name>
+    <value>{{ container_vcores }}</value>
+  </property>
+
+  <property>
     <name>yarn.log-aggregation-enable</name>
     <value>false</value>
   </property>

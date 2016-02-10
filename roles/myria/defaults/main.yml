@@ -7,5 +7,3 @@ namenode_port: 8020
 coordinator_port: 8001
 worker_base_port: 9001
 database_password: uwdb # TODO fix me :(
-container_mem_gb: "{{ WORKER_MEM_GB | float }}"
-container_vcores: "{{ WORKER_VCORES | int }}"
