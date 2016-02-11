@@ -15,6 +15,7 @@ MYRIA_ANSIBLE_TMPDIR="/tmp/myria-ec2-ansible"
 VIRTUALENV_VERSION=14.0.6
 MYRIA_VIRTUALENV_TMPDIR="/tmp/myria-virtualenv"
 
+DEFAULT_CLUSTER_NAME="myria"
 DEFAULT_REGION="us-west-2"
 DEFAULT_KEY_PAIR="$USER-myria"
 DEFAULT_INSTANCE_TYPE="t2.large"
@@ -32,6 +33,7 @@ read -r -d '' USAGE <<EOF
 myria-deploy [options]
 options:
 --verbose
+--cluster-name <defaults to $DEFAULT_CLUSTER_NAME>
 --profile <defaults to none>
 --key-pair <defaults to $DEFAULT_KEY_PAIR>
 --private-key-file <defaults to $HOME/.ssh/${DEFAULT_KEY_PAIR}_${DEFAULT_REGION}.pem>
@@ -63,6 +65,14 @@ case $opt in
     ;;
     -v|--verbose)
     VERBOSE=1
+    ;;
+    -n|--cluster-name)
+    if [[ -z "$2" ]]; then
+        echo "$USAGE" >&2
+        exit 1
+    fi
+    CLUSTER_NAME="$2"
+    shift # past argument
     ;;
     -p|--profile)
     if [[ -z "$2" ]]; then
@@ -195,6 +205,10 @@ if ! [[ -z "$PROFILE" ]]; then
     DEFAULT_KEY_PAIR="$DEFAULT_KEY_PAIR-$PROFILE"
 fi
 
+if [[ -z "$CLUSTER_NAME" ]]; then
+    CLUSTER_NAME="$DEFAULT_CLUSTER_NAME"
+fi
+
 if [[ -z "$REGION" ]]; then
     REGION="$DEFAULT_REGION"
 fi
@@ -255,7 +269,7 @@ else
     exec 3> /dev/null
 fi
 
-ANSIBLE_VARS="$ANSIBLE_VARS REGION=$REGION KEY_PAIR=$KEY_PAIR INSTANCE_TYPE=$INSTANCE_TYPE CLUSTER_SIZE=$CLUSTER_SIZE AMI_ID=$AMI_ID DATA_VOLUME_SIZE_GB=$DATA_VOLUME_SIZE_GB WORKER_MEM_GB=$WORKER_MEM_GB WORKER_VCORES=$WORKER_VCORES NODE_MEM_GB=$NODE_MEM_GB NODE_VCORES=$NODE_VCORES"
+ANSIBLE_VARS="$ANSIBLE_VARS REGION=$REGION KEY_PAIR=$KEY_PAIR INSTANCE_TYPE=$INSTANCE_TYPE CLUSTER_SIZE=$CLUSTER_SIZE AMI_ID=$AMI_ID DATA_VOLUME_SIZE_GB=$DATA_VOLUME_SIZE_GB WORKER_MEM_GB=$WORKER_MEM_GB WORKER_VCORES=$WORKER_VCORES NODE_MEM_GB=$NODE_MEM_GB NODE_VCORES=$NODE_VCORES CLUSTER_NAME=$CLUSTER_NAME USER=$USER"
 
 # check for python on the path
 if ! which python > /dev/null; then

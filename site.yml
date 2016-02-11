@@ -52,7 +52,7 @@
         cidr_ip: 0.0.0.0/0
     register: basic_firewall
 
-  - name: Launch instance
+  - name: Launch instances
     ec2:
       profile: "{{PROFILE | default(omit)}}"
       keypair: "{{KEY_PAIR}}"
@@ -65,13 +65,35 @@
       wait_timeout: "{{wait_timeout}}"
       region: "{{REGION}}"
       instance_tags:
-        Name: "{{ KEY_PAIR }}-myria"
+        cluster-name: "{{CLUSTER_NAME}}"
       volumes:
       - device_name: "{{ data_vol_device_name }}"
         volume_size: "{{ DATA_VOLUME_SIZE_GB }}"
         volume_type: "{{ data_vol_storage_type }}"
         delete_on_termination: true
     register: ec2
+
+  - name: Tag coordinator
+    ec2_tag:
+      profile: "{{PROFILE | default(omit)}}"
+      region: "{{REGION}}"
+      resource: "{{ item.id }}"
+      state: present
+      tags:
+        Name: "{{CLUSTER_NAME}}-{{USER}}-coordinator"
+        cluster-role: coordinator
+    with_items: ec2.instances[:1]
+
+  - name: Tag workers
+    ec2_tag:
+      profile: "{{PROFILE | default(omit)}}"
+      region: "{{REGION}}"
+      resource: "{{ item.1.id }}"
+      state: present
+      tags:
+        Name: "{{CLUSTER_NAME}}-{{USER}}-worker-{{item.0+1}}"
+        cluster-role: worker
+    with_indexed_items: ec2.instances[1:]
 
   - name: Add new instances to host group
     add_host: hostname={{item.public_ip}} groupname=nodes
