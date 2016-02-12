@@ -380,29 +380,15 @@ if ! source "$MYRIA_VIRTUALENV_TMPDIR/bin/activate" >&3 2>&3; then
     exit 1
 fi
 
-# check that boto is installed
-if ! python -c "import boto" 2> /dev/null; then
-    echo "Installing boto" >&2
-    pip install --verbose boto >&3 2>&3
-fi
-
-# check for boto 2.33+
-BOTO_VERSION=$(python -c "import boto; print boto.__version__")
-if [[ $BOTO_VERSION != "2.3"[3,4,5,6,7,8,9]* ]] && [[ $BOTO_VERSION != "2."[4,5,6,7,8,9]* ]]; then
-    printf '%s\n' 'myria-deploy: boto version must be 2.33+' '' "boto $BOTO_VERSION" >&2
+# install boto in virtualenv
+if ! pip install --verbose boto >&3 2>&3; then
+    echo "Failed to install boto package" >&2
     exit 1
 fi
 
-# check that Ansible is installed
-if ! which ansible-playbook > /dev/null; then
-    echo "Installing ansible" >&2
-    pip install --verbose ansible >&3 2>&3
-fi
-
-# check for ansible 1.6+
-ANSIBLE_VERSION=$(ansible --version 2>&1)
-if [[ $ANSIBLE_VERSION != "ansible 1."[6,7,8,9]* ]] && [[ $ANSIBLE_VERSION != "ansible 2."* ]]; then
-    printf '%s\n' 'myria-deploy: Ansible version must be 1.6+' '' "$ANSIBLE_VERSION" >&2
+# install ansible in virtualenv
+if ! pip install --verbose ansible >&3 2>&3; then
+    echo "Failed to install ansible package" >&2
     exit 1
 fi
 
