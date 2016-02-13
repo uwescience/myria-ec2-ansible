@@ -415,7 +415,7 @@ if ! aws $PROFILE_ARGS --region "$REGION" ec2 describe-key-pairs --key-name "$KE
 else
     # fail if the keypair exists but the corresponding private key file doesn't
     if ! [ -e $PRIVATE_KEY_FILE ]; then
-        printf '%s\n' "EC2 key pair $KEY_PAIR exists but private key file $PRIVATE_KEY_FILE is missing!" "Please delete the key pair $KEY_PAIR from the $REGION region or copy its private key to $PRIVATE_KEY_FILE." >&2
+        printf '%s\n' "EC2 key pair $KEY_PAIR exists but private key file $PRIVATE_KEY_FILE is missing!" "Please delete the key pair $KEY_PAIR from the $REGION region, copy its private key to $PRIVATE_KEY_FILE, or specify another private key file with the --private-key-file option." >&2
         exit 1
     fi
 fi
