@@ -1,5 +1,21 @@
 <?xml version="1.0"?>
 <configuration>
+  <property>
+    <description>CLASSPATH for YARN applications. A comma-separated list of CLASSPATH entries</description>
+    <name>yarn.application.classpath</name>
+    <value>
+      {{ hadoop_install_path }}/etc/hadoop,
+      {{ hadoop_install_path }}/share/hadoop/common/*,
+      {{ hadoop_install_path }}/share/hadoop/common/lib/*,
+      {{ hadoop_install_path }}/share/hadoop/hdfs/*,
+      {{ hadoop_install_path }}/share/hadoop/hdfs/lib/*,
+      {{ hadoop_install_path }}/share/hadoop/mapreduce/*,
+      {{ hadoop_install_path }}/share/hadoop/mapreduce/lib/*,
+      {{ hadoop_install_path }}/share/hadoop/yarn/*,
+      {{ hadoop_install_path }}/share/hadoop/yarn/lib/*,
+      {{ hadoop_install_path }}/share/hadoop/tools/lib/*
+    </value>
+  </property>
 
   <property>
     <name>yarn.resourcemanager.address</name>
@@ -24,7 +40,7 @@
     </description>
   </property>
 
-<!--   <property>
+  <!--   <property>
     <name>yarn.nodemanager.aux-services</name>
     <value>mapreduce_shuffle</value>
     <description>shuffle service that needs to be set for Map Reduce to run </description>
