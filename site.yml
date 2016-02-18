@@ -7,7 +7,25 @@
   vars:
     wait_timeout: 600
   tasks:
-  - name: Create security group  #so we can ssh into the instance from our laptop
+
+  - name: Create EC2 keypair if absent
+    ec2_key:
+      name: "{{KEY_PAIR}}"
+      region: "{{REGION}}"
+    register: key_pair
+  - name: Check for existing private key file
+    stat: path="{{PRIVATE_KEY_FILE}}"
+    register: private_key_file
+  - name: Fail if new keypair was created but private key file already exists
+    fail: msg="Keypair {{KEY_PAIR}} was successfully created but private key file {{PRIVATE_KEY_FILE}} already exists! Please delete or rename it, delete the keypair {{KEY_PAIR}} from the {{REGION}} region, and rerun the script."
+    when: (key_pair.changed) and (private_key_file.stat.exists)
+  - name: Fail if keypair already exists but private key file is missing
+    fail: msg="Keypair {{KEY_PAIR}} exists but private key file {{PRIVATE_KEY_FILE}} is missing! Please copy the private key file to {{PRIVATE_KEY_FILE}} or delete the keypair {{KEY_PAIR}} from the {{REGION}} region, and rerun the script."
+    when: (not (key_pair.changed)) and (not (private_key_file.stat.exists))
+  - name: Save private key to file
+    copy: content="{{ key_pair.key.private_key }}" dest="{{PRIVATE_KEY_FILE}}" mode=0600
+    when: (key_pair.changed)
+  - name: Create security group with public SSH access
     ec2_group:
       name: myriasec
       description: "Myria security group"

@@ -269,7 +269,7 @@ else
     exec 3> /dev/null
 fi
 
-ANSIBLE_VARS="$ANSIBLE_VARS REGION=$REGION KEY_PAIR=$KEY_PAIR INSTANCE_TYPE=$INSTANCE_TYPE CLUSTER_SIZE=$CLUSTER_SIZE AMI_ID=$AMI_ID DATA_VOLUME_SIZE_GB=$DATA_VOLUME_SIZE_GB WORKER_MEM_GB=$WORKER_MEM_GB WORKER_VCORES=$WORKER_VCORES NODE_MEM_GB=$NODE_MEM_GB NODE_VCORES=$NODE_VCORES CLUSTER_NAME=$CLUSTER_NAME USER=$USER"
+ANSIBLE_VARS="$ANSIBLE_VARS REGION=$REGION KEY_PAIR=$KEY_PAIR PRIVATE_KEY_FILE=$PRIVATE_KEY_FILE INSTANCE_TYPE=$INSTANCE_TYPE CLUSTER_SIZE=$CLUSTER_SIZE AMI_ID=$AMI_ID DATA_VOLUME_SIZE_GB=$DATA_VOLUME_SIZE_GB WORKER_MEM_GB=$WORKER_MEM_GB WORKER_VCORES=$WORKER_VCORES NODE_MEM_GB=$NODE_MEM_GB NODE_VCORES=$NODE_VCORES CLUSTER_NAME=$CLUSTER_NAME USER=$USER"
 
 # check for python on the path
 if ! which python > /dev/null; then
@@ -390,34 +390,6 @@ fi
 if ! pip install --verbose ansible >&3 2>&3; then
     echo "Failed to install ansible package" >&2
     exit 1
-fi
-
-# create new EC2 keypair if it doesn't exist and save the private key
-if ! aws $PROFILE_ARGS --region "$REGION" ec2 describe-key-pairs --key-name "$KEY_PAIR" > /dev/null 2>&3; then
-    echo "Creating new EC2 key pair $KEY_PAIR in region $REGION" >&2
-    if [ -e $PRIVATE_KEY_FILE ]; then
-        echo "Renaming existing private key file $PRIVATE_KEY_FILE to ${PRIVATE_KEY_FILE}.old" >&2
-        mv -f "$PRIVATE_KEY_FILE" "${PRIVATE_KEY_FILE}.old"
-    fi
-    TMP_PRIVATE_KEY_FILE="/tmp/`basename $PRIVATE_KEY_FILE`"
-    if ! aws $PROFILE_ARGS --region "$REGION" ec2 create-key-pair --key-name "$KEY_PAIR" --query 'KeyMaterial' --output text > "$TMP_PRIVATE_KEY_FILE" 2>&3; then
-        printf '%s\n' "Failed to create EC2 key pair $KEY_PAIR in region $REGION" >&2
-        exit 1
-    fi
-    if ! mv -f "$TMP_PRIVATE_KEY_FILE" "$PRIVATE_KEY_FILE"; then
-        printf '%s\n' "Failed to move temporary private key file $TMP_PRIVATE_KEY_FILE to $PRIVATE_KEY_FILE" >&2
-        exit 1
-    fi
-    if ! chmod 600 "$PRIVATE_KEY_FILE"; then
-        printf '%s\n' "Failed to set permissions on private key file $PRIVATE_KEY_FILE" >&2
-        exit 1
-    fi
-else
-    # fail if the keypair exists but the corresponding private key file doesn't
-    if ! [ -e $PRIVATE_KEY_FILE ]; then
-        printf '%s\n' "EC2 key pair $KEY_PAIR exists but private key file $PRIVATE_KEY_FILE is missing!" "Please delete the key pair $KEY_PAIR from the $REGION region, copy its private key to $PRIVATE_KEY_FILE, or specify another private key file with the --private-key-file option." >&2
-        exit 1
-    fi
 fi
 
 # Check if this file lives inside a git repo. If not, clone the repo to a temporary location.
