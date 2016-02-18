@@ -5,6 +5,7 @@ set -o pipefail
 # for binaries installed with `pip install --user`
 export PATH="$HOME/.local/bin:$PATH"
 export ANSIBLE_HOST_KEY_CHECKING=False
+export ANSIBLE_NOCOWS=1
 
 SCRIPT_PATH="$( cd "$(dirname "$0")" ; pwd -P )"
 
@@ -406,7 +407,7 @@ else
 fi
 
 echo "Provisioning cluster..." >&2
-ANSIBLE_OUTPUT="$(ansible-playbook "$MYRIA_ANSIBLE_DIR/site.yml" --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE" 2>&1 | tee >(cat - >&3))"
+ANSIBLE_OUTPUT="$(ansible-playbook "$MYRIA_ANSIBLE_DIR/site.yml" -vvv --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE" 2>&1 | tee >(cat - >&3))"
 if [ $? -ne 0 ]; then
     printf '%s\n' "Ansible deployment failed:" '' "$ANSIBLE_OUTPUT" >&2
     exit 1
