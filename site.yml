@@ -25,7 +25,16 @@
   - name: Save private key to file
     copy: content="{{ key_pair.key.private_key }}" dest="{{PRIVATE_KEY_FILE}}" mode=0600
     when: (key_pair.changed)
-  - name: Create security group with public SSH access
+  - name: Create security group (cannot add self-referencing rules until the group exists)
+    ec2_group:
+      name: myriasec
+      description: "Myria security group"
+      region: "{{REGION}}"
+      profile: "{{PROFILE | default(omit)}}"
+      vpc_id: "{{VPC_ID | default(omit)}}"
+    register: ec2_group
+
+  - name: Add security group rules
     ec2_group:
       name: myriasec
       description: "Myria security group"
@@ -36,7 +45,7 @@
       - proto: all
         from_port: 0
         to_port: 65535
-        group_name: myriasec
+        group_id: "{{ec2_group.group_id}}"
       - proto: tcp
         from_port: 22
         to_port: 22
@@ -68,13 +77,12 @@
       rules_egress:
       - proto: all
         cidr_ip: 0.0.0.0/0
-    register: basic_firewall
 
   - name: Launch instances
     ec2:
       profile: "{{PROFILE | default(omit)}}"
       keypair: "{{KEY_PAIR}}"
-      group_id: "{{basic_firewall.group_id}}"
+      group_id: "{{ec2_group.group_id}}"
       instance_type: "{{INSTANCE_TYPE}}"
       image: "{{AMI_ID}}"
       instance_profile_name: "{{ROLE | default(omit)}}"
