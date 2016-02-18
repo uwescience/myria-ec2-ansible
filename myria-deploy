@@ -202,7 +202,6 @@ fi
 if ! [[ -z "$PROFILE" ]]; then
     PROFILE_ARGS="--profile $PROFILE"
     ANSIBLE_VARS="$ANSIBLE_VARS PROFILE=$PROFILE"
-    DEFAULT_KEY_PAIR="$DEFAULT_KEY_PAIR-$PROFILE"
 fi
 
 if [[ -z "$CLUSTER_NAME" ]]; then
@@ -218,7 +217,11 @@ if [[ -z "$KEY_PAIR" ]]; then
 fi
 
 if [[ -z "$PRIVATE_KEY_FILE" ]]; then
-    PRIVATE_KEY_FILE="$HOME/.ssh/${KEY_PAIR}_${REGION}.pem"
+    if ! [[ -z "$PROFILE" ]]; then
+        PRIVATE_KEY_FILE="$HOME/.ssh/${KEY_PAIR}_${PROFILE}_${REGION}.pem"
+    else
+        PRIVATE_KEY_FILE="$HOME/.ssh/${KEY_PAIR}_${REGION}.pem"
+    fi
 fi
 
 if [[ -z "$INSTANCE_TYPE" ]]; then
