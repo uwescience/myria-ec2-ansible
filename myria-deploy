@@ -21,7 +21,6 @@ DEFAULT_REGION="us-west-2"
 DEFAULT_KEY_PAIR="$USER-myria"
 DEFAULT_INSTANCE_TYPE="t2.large"
 DEFAULT_CLUSTER_SIZE=5
-DEFAULT_AMI_ID="ami-5189a661"
 DEFAULT_DATA_VOLUME_SIZE_GB=20
 DEFAULT_WORKER_MEM_GB=4
 DEFAULT_WORKER_VCORES=1
@@ -41,7 +40,7 @@ options:
 --region <defaults to $DEFAULT_REGION>
 --instance-type <defaults to $DEFAULT_INSTANCE_TYPE>
 --cluster-size <defaults to $DEFAULT_CLUSTER_SIZE>
---ami-id <defaults to $DEFAULT_AMI_ID>
+--ami-id <defaults to region-specific 64-bit HVM-SSD AMI for Ubuntu 14.04.3 LTS>
 --vpc-id <defaults to none>
 --role <defaults to none>
 --data-volume-size-gb <defaults to $DEFAULT_DATA_VOLUME_SIZE_GB>
@@ -231,7 +230,42 @@ if [[ -z "$CLUSTER_SIZE" ]]; then
 fi
 
 if [[ -z "$AMI_ID" ]]; then
-    AMI_ID="$DEFAULT_AMI_ID"
+    case $REGION in
+        us-east-1)
+            AMI_ID="ami-fce3c696"
+        ;;
+        us-west-2)
+            AMI_ID="ami-9abea4fb"
+        ;;
+        us-west-1)
+            AMI_ID="ami-06116566"
+        ;;
+        eu-west-1)
+            AMI_ID="ami-f95ef58a"
+        ;;
+        eu-central-1)
+            AMI_ID="ami-87564feb"
+        ;;
+        ap-southeast-1)
+            AMI_ID="ami-25c00c46"
+        ;;
+        ap-northeast-1)
+            AMI_ID="ami-a21529cc"
+        ;;
+        ap-southeast-2)
+            AMI_ID="ami-6c14310f"
+        ;;
+        ap-northeast-2)
+            AMI_ID="ami-09dc1267"
+        ;;
+        sa-east-1)
+            AMI_ID="ami-0fb83963"
+        ;;
+        *)
+            echo "No AMI found for region $REGION" >&2
+            exit 1
+        ;;
+    esac
 fi
 
 if ! [[ -z "$VPC_ID" ]]; then
