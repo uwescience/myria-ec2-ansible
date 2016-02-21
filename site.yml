@@ -67,6 +67,10 @@
         to_port: "{{myria_web_port}}"
         cidr_ip: 0.0.0.0/0
       - proto: tcp
+        from_port: "{{ganglia_web_port}}"
+        to_port: "{{ganglia_web_port}}"
+        cidr_ip: 0.0.0.0/0
+      - proto: tcp
         from_port: 8088
         to_port: 8088
         cidr_ip: 0.0.0.0/0
@@ -178,7 +182,7 @@
     - basenode
     - yarn-common
     - postgres
-    # - ganglia-client
+    - ganglia-monitor
 
 - name: Configure YARN RM
   hosts: rmnode
@@ -196,6 +200,15 @@
   roles:
     - yarn-nm
 
+- name: Configure Ganglia UI on coordinator
+  hosts: coordinators
+  remote_user: ubuntu
+  sudo: yes
+  gather_facts: false
+  roles:
+    - ganglia-metad
+    - ganglia-web
+
 - name: Configure and launch MyriaX on coordinator
   hosts: coordinators
   remote_user: ubuntu
@@ -203,7 +216,6 @@
   gather_facts: false
   roles:
     - myria-python
-    # - ganglia
     - myria
 
 - name: Install and launch myria-web on coordinator
@@ -221,4 +233,5 @@
   tasks:
     - shell: "echo http://{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }}:{{ myria_web_port }} > $HOME/myria-web.url"
     - shell: "echo http://{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }}:{{ myria_rest_port }} > $HOME/myria-rest.url"
+    - shell: "echo http://{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }}:{{ ganglia_web_port }} > $HOME/ganglia-web.url"
     - shell: "echo {{ myria_user }}@{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }} > $HOME/myria-ssh-user-host.txt"

@@ -1,0 +1,5 @@
+---
+# for some reason gmond hangs when restarting it on Ubuntu 12.04+, use kill here
+- name: restart ganglia-monitor
+  # shell: killall -v gmond && /usr/sbin/gmond --pid-file=/var/run/ganglia-monitor.pid
+  service: name=ganglia-monitor state=restarted

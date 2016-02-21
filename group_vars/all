@@ -71,3 +71,11 @@ myria_web_port: 8080
 gae_version: 1.9.31
 gae_base_dir: /opt
 gae_dirname: google_appengine
+
+#----------------------------------
+#   Ganglia Variables
+#----------------------------------
+
+ganglia_monitor_port: 8649
+ganglia_web_port: 8090
+ganglia_conf_dir: /etc/ganglia

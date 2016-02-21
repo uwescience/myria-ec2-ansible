@@ -1,0 +1,45 @@
+---
+- name: install Ganglia web dependencies via apt
+  apt: name={{ item }}
+  with_items:
+    # - apache2
+    - make
+    - php5
+    - rrdtool
+  tags: ganglia
+
+- name: install ganglia-web at /var/www/ganglia
+  shell: creates=/var/www/ganglia chdir=/var/www curl -L {{ ganglia_web_download_url }} | tar xz && mv ganglia-web-{{ ganglia_web_version }} ganglia
+  tags: ganglia
+
+- name: make sure ganglia-web makefile has the correct path
+  command: creates=/var/lib/ganglia-web/dwoo chdir=/var/www/ganglia sed -i "s=/var/www/html/ganglia=/var/www/ganglia=" Makefile
+  tags: ganglia
+
+- name: make sure ganglia-web makefile has the correct user
+  command: creates=/var/lib/ganglia-web/dwoo chdir=/var/www/ganglia sed -i "s/APACHE_USER =  apache/APACHE_USER = www-data/" Makefile
+  tags: ganglia
+
+- name: make install ganglia-web
+  command: creates=/var/lib/ganglia-web/dwoo chdir=/var/www/ganglia make install
+  notify:
+    - restart apache2
+  tags: ganglia
+
+- name: make apache2 listen on custom port
+  lineinfile: dest=/etc/apache2/ports.conf regexp="^Listen 80" line="Listen {{ ganglia_web_port }}" state=present
+  notify:
+    - restart apache2
+  tags: ganglia
+
+- name: create apache2 virtualhost on custom port
+  lineinfile: dest=/etc/apache2/sites-available/000-default.conf regexp="^<VirtualHost \*:80>" line="<VirtualHost *:{{ ganglia_web_port }}>" state=present
+  notify:
+    - restart apache2
+  tags: ganglia
+
+- name: create apache2 virtualhost on custom port
+  lineinfile: dest=/etc/apache2/sites-available/000-default.conf regexp='^(\s*)DocumentRoot /var/www/html\s*' line='\1DocumentRoot /var/www/ganglia' backrefs=yes state=present
+  notify:
+    - restart apache2
+  tags: ganglia
