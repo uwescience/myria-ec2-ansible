@@ -38,11 +38,13 @@ options:
 --key-pair <defaults to $DEFAULT_KEY_PAIR>
 --private-key-file <defaults to $HOME/.ssh/${DEFAULT_KEY_PAIR}_${DEFAULT_REGION}.pem>
 --region <defaults to $DEFAULT_REGION>
+--zone <defaults to none>
 --instance-type <defaults to $DEFAULT_INSTANCE_TYPE>
 --cluster-size <defaults to $DEFAULT_CLUSTER_SIZE>
 --ami-id <defaults to region-specific 64-bit HVM-SSD AMI for Ubuntu 14.04.3 LTS>
 --vpc-id <defaults to none>
 --role <defaults to none>
+--spot-price <defaults to none>
 --data-volume-size-gb <defaults to $DEFAULT_DATA_VOLUME_SIZE_GB>
 --worker-mem-gb <defaults to $DEFAULT_WORKER_MEM_GB>
 --worker-vcores <defaults to $DEFAULT_WORKER_VCORES>
@@ -106,6 +108,14 @@ case $opt in
     REGION="$2"
     shift # past argument
     ;;
+    -z|--zone)
+    if [[ -z "$2" ]]; then
+        echo "$USAGE" >&2
+        exit 1
+    fi
+    ZONE="$2"
+    shift # past argument
+    ;;
     -s|--cluster-size)
     if [[ -z "$2" ]]; then
         echo "$USAGE" >&2
@@ -144,6 +154,14 @@ case $opt in
         exit 1
     fi
     ROLE="$2"
+    shift # past argument
+    ;;
+    -sp|--spot-price)
+    if [[ -z "$2" ]]; then
+        echo "$USAGE" >&2
+        exit 1
+    fi
+    SPOT_PRICE="$2"
     shift # past argument
     ;;
     -v|--data-volume-size-gb)
@@ -212,6 +230,10 @@ if [[ -z "$REGION" ]]; then
     REGION="$DEFAULT_REGION"
 fi
 
+if ! [[ -z "$ZONE" ]]; then
+    ANSIBLE_VARS="$ANSIBLE_VARS ZONE=$ZONE"
+fi
+
 if [[ -z "$KEY_PAIR" ]]; then
     KEY_PAIR="$DEFAULT_KEY_PAIR"
 fi
@@ -277,6 +299,10 @@ fi
 
 if ! [[ -z "$ROLE" ]]; then
     ANSIBLE_VARS="$ANSIBLE_VARS ROLE=$ROLE"
+fi
+
+if ! [[ -z "$SPOT_PRICE" ]]; then
+    ANSIBLE_VARS="$ANSIBLE_VARS SPOT_PRICE=$SPOT_PRICE"
 fi
 
 if [[ -z "$DATA_VOLUME_SIZE_GB" ]]; then
