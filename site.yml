@@ -1,12 +1,12 @@
 ---
-##ansible-playbook myria.yml "-e KEY_NAME=parmita-keypair"
+# ansible-playbook "$MYRIA_ANSIBLE_DIR/site.yml" --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE"
 - name: Create AWS resources
   hosts: localhost
   connection: local
   gather_facts: False
   vars:
-    wait_timeout: 600
-    spot_wait_timeout: 600
+    wait_timeout: 3600
+    spot_wait_timeout: 3600
   tasks:
 
   - name: Create EC2 keypair if absent
@@ -94,6 +94,8 @@
       count: "{{CLUSTER_SIZE}}"
       spot_price: "{{SPOT_PRICE | default(omit)}}"
       spot_wait_timeout: "{{ spot_wait_timeout }}"
+      # add for ansible 2.1
+      #spot_launch_group: "{{CLUSTER_NAME | default(omit)}}"
       wait: true
       wait_timeout: "{{wait_timeout}}"
       region: "{{REGION}}"
@@ -162,24 +164,31 @@
     add_host: hostname={{item.private_ip}} groupname=nmnodes_private
     with_items: ec2.instances
 
-  - add_host: hostname={{item.dns_name}} groupname=coordinator_name
+  - name: Add coordinator public DNS to coordinator_name group
+    add_host: hostname={{item.dns_name}} groupname=coordinator_name
     with_items: ec2.instances[:1]
 
-  - add_host: hostname={{item.dns_name}} groupname=worker_names
+  - name: Add workers public DNS to worker_names group
+    add_host: hostname={{item.dns_name}} groupname=worker_names
     with_items: ec2.instances[1:]
 
-  - add_host: hostname={{item.private_dns_name}} groupname=coordinator_private_name
+  - name: Add coordinator private DNS to coordinator_private_name group
+    add_host: hostname={{item.private_dns_name}} groupname=coordinator_private_name
     with_items: ec2.instances[:1]
 
-  - add_host: hostname={{item.private_dns_name}} groupname=worker_private_names
+  - name: Add workers private DNS to worker_private_names group
+    add_host: hostname={{item.private_dns_name}} groupname=worker_private_names
     with_items: ec2.instances[1:]
 
-  - name: Wait for SSH to come up
-    local_action: wait_for host={{ item.public_dns_name }} port=22 delay=60 timeout=600 state=started
+  - name: Wait for SSH to come up on all nodes
+    wait_for: host={{ item.public_ip }} port=22 delay=0 timeout=300 state=started
+    sudo: false
+    async: 300
+    poll: 30
     with_items: ec2.instances
 
 - name: Configure common functionality on all nodes
-  hosts: nodes    
+  hosts: nodes
   remote_user: ubuntu
   sudo: yes
   gather_facts: true
