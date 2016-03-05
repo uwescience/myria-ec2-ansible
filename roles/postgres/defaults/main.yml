@@ -9,3 +9,5 @@ postgres_encoding: 'UTF-8'
 postgres_cluster_name: myria
 postgres_data_root: '{{data_vol_mount_dir}}/postgresql'
 postgres_data_dir: '{{postgres_data_root}}/{{postgres_version}}/{{postgres_cluster_name}}'
+shared_buffers_mb: 512
+work_mem_mb: 128

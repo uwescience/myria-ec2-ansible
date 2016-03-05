@@ -64,29 +64,45 @@
 - name: reset the cluster - drop the existing one
   shell: 'pg_dropcluster --stop {{ postgres_version }} main'
   become_user: postgres
+  notify: restart postgresql
 
 - name: reset the cluster - create a new one (with specified encoding and locale)
   shell: 'pg_createcluster --start --locale {{ postgres_locale }} -e {{ postgres_encoding }} -d {{ postgres_data_dir }} {{ postgres_version }} {{ postgres_cluster_name }}'
   become_user: postgres
+  notify: restart postgresql
 
-- name: altering postgres.conf- adding listeners
+- name: altering postgresql.conf - adding listeners
   lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/postgresql.conf
                 regexp="^listen_addresses"
                 line="listen_addresses = '*'" state=present
                 backup=yes
+  notify: restart postgresql
 
-- name: altering pg_hba.conf- adding listeners
+- name: altering pg_hba.conf - adding listeners
   lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/pg_hba.conf
                 line="host    all   all        0.0.0.0/0   md5" state=present
                 backup=yes
+  notify: restart postgresql
+
+- name: altering postgresql.conf - changing shared_buffers
+  lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/postgresql.conf
+                regexp="^shared_buffers"
+                line="shared_buffers = {{shared_buffers_mb}}MB" state=present
+                backup=yes
+  notify: restart postgresql
+
+- name: altering postgresql.conf - changing work_mem
+  lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/postgresql.conf
+                line="work_mem = {{work_mem_mb}}MB" state=present
+                backup=yes
+  notify: restart postgresql
 
 - name: Create database instance
   postgresql_db: name={{database_name}}
   become_user: postgres
+  notify: restart postgresql
 
 - name: Create database user
   postgresql_user: db={{database_name}} name={{database_username}} password={{database_password}} priv=ALL
   become_user: postgres
-
-- name: Restart Postgres
-  service: name=postgresql state=restarted
+  notify: restart postgresql
