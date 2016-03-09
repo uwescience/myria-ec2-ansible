@@ -130,7 +130,7 @@
       tags:
         Name: "{{CLUSTER_NAME}}-{{USER}}-worker-{{item.0+1}}"
         cluster-role: worker
-    with_indexed_items: ec2.instances[1:]
+    with_indexed_items: "{{ ec2.instances[1:] | sort(attribute='private_dns_name') }}"
 
   - name: Add new instances to host group
     add_host: hostname={{item.public_ip}} groupname=nodes
