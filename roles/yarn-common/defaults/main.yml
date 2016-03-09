@@ -10,3 +10,4 @@ hdfs_datanode_data_dir: '{{data_vol_mount_dir}}/datanode'
 hdfs_replication_factor: 2
 node_mem_gb: "{{ NODE_MEM_GB | float }}"
 node_vcores: "{{ NODE_VCORES | int }}"
+hadoop_log_dir: "{{ data_vol_mount_dir }}/hadoop/logs"

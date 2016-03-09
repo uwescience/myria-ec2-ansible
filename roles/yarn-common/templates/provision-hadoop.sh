@@ -34,6 +34,8 @@ export YARN_HOME=${HADOOP_HOME}
 export HADOOP_CONF_DIR=${HADOOP_HOME}/etc/hadoop
 export YARN_CONF_DIR=${HADOOP_HOME}/etc/hadoop
 export YARN_ROOT_LOGGER=${YARN_LOG_LEVEL},console
+export HADOOP_LOG_DIR=${HADOOP_LOG_DIR}
+export YARN_LOG_DIR=${HADOOP_LOG_DIR}
 EOF
 fi
 
@@ -55,8 +57,8 @@ chown root:${HADOOP_GROUP} ${CONTAINER_EXECUTOR_CFG}
 chmod 6050 ${CONTAINER_EXECUTOR}
 chmod 0400 ${CONTAINER_EXECUTOR_CFG}
 # Needed for Hadoop daemon and application logs
-mkdir -p ${HADOOP_HOME}/logs
-chmod 777 ${HADOOP_HOME}/logs
+mkdir -p ${HADOOP_LOG_DIR}
+chmod 777 ${HADOOP_LOG_DIR}
 # Needed for NameNode data
 mkdir -p ${HADOOP_HOME}/tmp
 chmod 777 ${HADOOP_HOME}/tmp
