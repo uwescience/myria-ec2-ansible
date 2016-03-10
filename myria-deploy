@@ -11,10 +11,8 @@ SCRIPT_PATH="$( cd "$(dirname "$0")" ; pwd -P )"
 
 MYRIA_ANSIBLE_REPO="uwescience/myria-ec2-ansible"
 MYRIA_ANSIBLE_BRANCH="master"
-MYRIA_ANSIBLE_TMPDIR="/tmp/myria-ec2-ansible"
 
 VIRTUALENV_VERSION=14.0.6
-MYRIA_VIRTUALENV_TMPDIR="/tmp/myria-virtualenv"
 
 DEFAULT_CLUSTER_NAME="myria"
 DEFAULT_REGION="us-west-2"
@@ -33,6 +31,8 @@ read -r -d '' USAGE <<EOF
 myria-deploy [options]
 options:
 --verbose
+--create
+--destroy
 --cluster-name <defaults to $DEFAULT_CLUSTER_NAME>
 --profile <defaults to none>
 --key-pair <defaults to $DEFAULT_KEY_PAIR>
@@ -68,6 +68,12 @@ case $opt in
     ;;
     -v|--verbose)
     VERBOSE=1
+    ;;
+    -c|--create)
+    CREATE=1
+    ;;
+    -d|--destroy)
+    DESTROY=1
     ;;
     -n|--cluster-name)
     if [[ -z "$2" ]]; then
@@ -220,6 +226,16 @@ case $opt in
 esac
 shift # past argument or value
 done
+
+if [[ ((-z "$CREATE") && (-z "$DESTROY")) || (! (-z "$CREATE") && ! (-z "$DESTROY")) ]]; then
+    printf '%s\n' 'myria-deploy: You must specify one of --create or --destroy' >&2
+    exit 1
+fi
+
+if [[ ! (-z "$DESTROY") && (-z "$CLUSTER_NAME") ]]; then
+    printf '%s\n' 'myria-deploy: You must specify --cluster-name if you specify --destroy' >&2
+    exit 1
+fi
 
 if [[ ! (-z "$PRIVATE_KEY_FILE") && (-z "$KEY_PAIR") ]]; then
     printf '%s\n' 'myria-deploy: You must specify --key-pair if you specify --private-key-file' >&2
@@ -433,34 +449,37 @@ VIRTUALENV_TARBALL="${VIRTUALENV_PACKAGE}.tar.gz"
 VIRTUALENV_DOWNLOAD_URL="https://pypi.python.org/packages/source/v/virtualenv/${VIRTUALENV_TARBALL}"
 VIRTUALENV_TARBALL_PATH="/tmp/${VIRTUALENV_TARBALL}"
 VIRTUALENV_SRC_DIR="/tmp/${VIRTUALENV_PACKAGE}"
-if ! curl -o "$VIRTUALENV_TARBALL_PATH" "$VIRTUALENV_DOWNLOAD_URL" 2>&3; then
-    printf '%s\n' "Failed to download package $VIRTUALENV_PACKAGE from $VIRTUALENV_DOWNLOAD_URL" >&2
-    exit 1
-fi
-if ! mkdir -p "$VIRTUALENV_SRC_DIR" 2>&3; then
-    printf '%s\n' "Failed to create virtualenv source directory $VIRTUALENV_SRC_DIR" >&2
-    exit 1
-fi
-if ! tar xvfz "$VIRTUALENV_TARBALL_PATH" -C `dirname $VIRTUALENV_SRC_DIR` 2>&3; then
-    printf '%s\n' "Failed to unpack virtualenv archive $VIRTUALENV_TARBALL_PATH" >&2
-    exit 1
+if ! [ -d "$VIRTUALENV_SRC_DIR" ]; then
+    if ! curl -o "$VIRTUALENV_TARBALL_PATH" "$VIRTUALENV_DOWNLOAD_URL" 2>&3; then
+        printf '%s\n' "Failed to download package $VIRTUALENV_PACKAGE from $VIRTUALENV_DOWNLOAD_URL" >&2
+        exit 1
+    fi
+    if ! mkdir -p "$VIRTUALENV_SRC_DIR" 2>&3; then
+        printf '%s\n' "Failed to create virtualenv source directory $VIRTUALENV_SRC_DIR" >&2
+        exit 1
+    fi
+    if ! tar xvfz "$VIRTUALENV_TARBALL_PATH" -C `dirname $VIRTUALENV_SRC_DIR` 2>&3; then
+        printf '%s\n' "Failed to unpack virtualenv archive $VIRTUALENV_TARBALL_PATH" >&2
+        exit 1
+    fi
 fi
 
 # create Python virtual environment
-if [ -d "$MYRIA_VIRTUALENV_TMPDIR" ]; then
-    printf '%s\n' "Removing existing virtualenv directory $MYRIA_VIRTUALENV_TMPDIR" >&3
-    rm -rf "$MYRIA_VIRTUALENV_TMPDIR" 2>&3
-fi
-if ! python "$VIRTUALENV_SRC_DIR/virtualenv.py" --verbose "$MYRIA_VIRTUALENV_TMPDIR" >&3 2>&3; then
-    printf '%s\n' "Creating virtual environment $MYRIA_VIRTUALENV_TMPDIR failed" >&2
+# this works with mktemp on both OSX and Linux
+VIRTUALENV_TMP_DIR=`mktemp -d 2>/dev/null || mktemp -d -t "$VIRTUALENV_PACKAGE"`
+if ! python "$VIRTUALENV_SRC_DIR/virtualenv.py" --verbose "$VIRTUALENV_TMP_DIR" >&3 2>&3; then
+    printf '%s\n' "Creating virtual environment $VIRTUALENV_TMP_DIR failed" >&2
     exit 1
 fi
 
 # activate Python virtual environment
-if ! source "$MYRIA_VIRTUALENV_TMPDIR/bin/activate" >&3 2>&3; then
-    printf '%s\n' "Activating virtual environment $MYRIA_VIRTUALENV_TMPDIR failed" >&2
+if ! source "$VIRTUALENV_TMP_DIR/bin/activate" >&3 2>&3; then
+    printf '%s\n' "Activating virtual environment $VIRTUALENV_TMP_DIR failed" >&2
     exit 1
 fi
+
+# ensure Python virtual environment is deactivated no matter how we exit
+trap 'deactivate' EXIT
 
 # install boto in virtualenv
 if ! pip install --verbose boto >&3 2>&3; then
@@ -468,18 +487,21 @@ if ! pip install --verbose boto >&3 2>&3; then
     exit 1
 fi
 
-# install ansible in virtualenv
-if ! pip install --verbose ansible >&3 2>&3; then
-    echo "Failed to install ansible package" >&2
-    exit 1
+if [[ -z "$DESTROY" ]]; then
+    # install ansible in virtualenv
+    if ! pip install --verbose ansible >&3 2>&3; then
+        echo "Failed to install ansible package" >&2
+        exit 1
+    fi
 fi
 
 # Check if this file lives inside a git repo. If not, clone the repo to a temporary location.
 if [ -d "$SCRIPT_PATH/.git" ]; then
     MYRIA_ANSIBLE_DIR="$SCRIPT_PATH"
 else
+    # this works with mktemp on both OSX and Linux
+    MYRIA_ANSIBLE_TMPDIR=`mktemp -d 2>/dev/null || mktemp -d -t "myria-ec2-ansible"`
     echo "Cloning $MYRIA_ANSIBLE_REPO repo into $MYRIA_ANSIBLE_TMPDIR" >&3
-    rm -rf "$MYRIA_ANSIBLE_TMPDIR" 2>&3
     if ! git clone -b "$MYRIA_ANSIBLE_BRANCH" "https://github.com/$MYRIA_ANSIBLE_REPO.git" "$MYRIA_ANSIBLE_TMPDIR" 2>&3; then
         printf '%s\n' "Failed to clone $MYRIA_ANSIBLE_REPO repo into $MYRIA_ANSIBLE_TMPDIR" >&2
         exit 1
@@ -487,20 +509,30 @@ else
     MYRIA_ANSIBLE_DIR="$MYRIA_ANSIBLE_TMPDIR"
 fi
 
-echo "Provisioning cluster..." >&2
-ANSIBLE_OUTPUT="$(ansible-playbook "$MYRIA_ANSIBLE_DIR/site.yml" --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE" --forks=20 2>&1 | tee >(cat - >&3))"
-if [ $? -ne 0 ]; then
-    printf '%s\n' "Ansible deployment failed:" '' "$ANSIBLE_OUTPUT" >&2
-    exit 1
+if ! [[ -z "$DESTROY" ]]; then
+    export REGION="$REGION"
+    export GROUP_NAME="$CLUSTER_NAME"
+    export PROFILE="$PROFILE"
+    export VPC_ID="$VPC_ID"
+    DESTROY_CLUSTER_OUTPUT="$(python "$MYRIA_ANSIBLE_DIR/delete_security_group_with_instances.py" 2>&1 | tee >(cat - >&3))"
+    if [ $? -ne 0 ]; then
+        printf '%s\n' "Failed to destroy cluster '$CLUSTER_NAME':" '' "$DESTROY_CLUSTER_OUTPUT" >&2
+        exit 1
+    fi
+    printf '%s\n' 'myria-deploy: SUCCESS' '' "Cluster '$CLUSTER_NAME' successfully destroyed." >&2
+else
+    echo "Provisioning cluster..." >&2
+    ANSIBLE_OUTPUT="$(ansible-playbook "$MYRIA_ANSIBLE_DIR/site.yml" --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE" --forks=20 2>&1 | tee >(cat - >&3))"
+    if [ $? -ne 0 ]; then
+        printf '%s\n' "Ansible deployment failed:" '' "$ANSIBLE_OUTPUT" >&2
+        exit 1
+    fi
+    MYRIA_WEB_URL=$(cat /tmp/${CLUSTER_NAME}-myria-web.url)
+    MYRIA_REST_URL=$(cat /tmp/${CLUSTER_NAME}-myria-rest.url)
+    GANGLIA_WEB_URL=$(cat /tmp/${CLUSTER_NAME}-ganglia-web.url)
+    MYRIA_SSH_USER_HOST=$(cat /tmp/${CLUSTER_NAME}-myria-ssh-user-host.txt)
+    MYRIA_SSH_CMD="ssh -i $PRIVATE_KEY_FILE $MYRIA_SSH_USER_HOST"
+    printf '%s\n' 'myria-deploy: SUCCESS' '' "myria-web interface available at $MYRIA_WEB_URL" "MyriaX REST endpoint available at $MYRIA_REST_URL" "Ganglia web interface available at $GANGLIA_WEB_URL" '' "Log into coordinator:" "$MYRIA_SSH_CMD" >&2
 fi
 
-# deactivate Python virtual environment
-deactivate
-
-MYRIA_WEB_URL=$(cat $HOME/myria-web.url)
-MYRIA_REST_URL=$(cat $HOME/myria-rest.url)
-GANGLIA_WEB_URL=$(cat $HOME/ganglia-web.url)
-MYRIA_SSH_USER_HOST=$(cat $HOME/myria-ssh-user-host.txt)
-MYRIA_SSH_CMD="ssh -i $PRIVATE_KEY_FILE $MYRIA_SSH_USER_HOST"
-printf '%s\n' 'myria-deploy: SUCCESS' '' "myria-web interface available at $MYRIA_WEB_URL" "MyriaX REST endpoint available at $MYRIA_REST_URL" "Ganglia web interface available at $GANGLIA_WEB_URL" '' "Log into coordinator:" "$MYRIA_SSH_CMD" >&2
 exit 0

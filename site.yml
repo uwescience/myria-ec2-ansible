@@ -26,18 +26,10 @@
   - name: Save private key to file
     copy: content="{{ key_pair.key.private_key }}" dest="{{PRIVATE_KEY_FILE}}" mode=0600
     when: (key_pair.changed)
-  - name: Create security group (cannot add self-referencing rules until the group exists)
-    ec2_group:
-      name: myriasec
-      description: "Myria security group"
-      region: "{{REGION}}"
-      profile: "{{PROFILE | default(omit)}}"
-      vpc_id: "{{VPC_ID | default(omit)}}"
-    register: ec2_group
 
-  - name: Add security group rules
+  - name: Create security group for this cluster
     ec2_group:
-      name: myriasec
+      name: "{{CLUSTER_NAME}}"
       description: "Myria security group"
       region: "{{REGION}}"
       profile: "{{PROFILE | default(omit)}}"
@@ -46,7 +38,9 @@
       - proto: all
         from_port: 0
         to_port: 65535
-        group_id: "{{ec2_group.group_id}}"
+        # self-reference by name so we can define the group in one pass (which is necessary for the duplicate detection in the next task to work)
+        # FIXME: according to AWS docs, reference by name won't work in non-default VPC (must use group_id)
+        group_name: "{{CLUSTER_NAME}}"
       - proto: tcp
         from_port: 22
         to_port: 22
@@ -82,6 +76,11 @@
       rules_egress:
       - proto: all
         cidr_ip: 0.0.0.0/0
+    register: ec2_group
+
+  - name: Fail if security group already exists with the same name as this cluster
+    fail: msg="Security group '{{CLUSTER_NAME}}' already exists. Please terminate all instances in this security group and then delete the security group."
+    when: not (ec2_group.changed)
 
   - name: Launch instances
     ec2:
@@ -247,7 +246,7 @@
   hosts: localhost
   connection: local
   tasks:
-    - shell: "echo http://{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }}:{{ myria_web_port }} > $HOME/myria-web.url"
-    - shell: "echo http://{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }}:{{ myria_rest_port }} > $HOME/myria-rest.url"
-    - shell: "echo http://{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }}:{{ ganglia_web_port }} > $HOME/ganglia-web.url"
-    - shell: "echo {{ myria_user }}@{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }} > $HOME/myria-ssh-user-host.txt"
+    - shell: "echo http://{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }}:{{ myria_web_port }} > /tmp/{{CLUSTER_NAME}}-myria-web.url"
+    - shell: "echo http://{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }}:{{ myria_rest_port }} > /tmp/{{CLUSTER_NAME}}-myria-rest.url"
+    - shell: "echo http://{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }}:{{ ganglia_web_port }} > /tmp/{{CLUSTER_NAME}}-ganglia-web.url"
+    - shell: "echo {{ myria_user }}@{{ hostvars[groups['coordinator_name'][0]]['inventory_hostname'] }} > /tmp/{{CLUSTER_NAME}}-myria-ssh-user-host.txt"
