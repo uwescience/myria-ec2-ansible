@@ -33,7 +33,7 @@ while True:
         group.delete()
     except EC2ResponseError as e:
         if e.error_code == "DependencyViolation":
-            print >> sys.stderr, "Dependency violation detected, retrying in 5 seconds..."
+            print >> sys.stderr, "Security group state still converging, retrying in 5 seconds..."
             sleep(5)
         else:
             raise
