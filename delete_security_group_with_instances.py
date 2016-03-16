@@ -8,7 +8,7 @@ region = os.environ['REGION'] # required
 group_name = os.environ['GROUP_NAME'] # required
 vpc_id = os.environ.get('VPC_ID') # optional
 profile = os.environ.get('PROFILE') # optional
-ec2 = connect_to_region(region, profile_name=profile)
+ec2 = connect_to_region(region, profile_name=(profile if profile else None)) # ignore empty string
 groups_by_name = ec2.get_all_security_groups(filters={'group-name': group_name})
 groups = groups_by_name
 if vpc_id:
