@@ -1,0 +1,3 @@
+---
+- name: restart myria
+  service: name=myria state=restarted enabled=yes

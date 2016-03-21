@@ -63,7 +63,7 @@ chmod 777 ${HADOOP_LOG_DIR}
 mkdir -p ${HADOOP_HOME}/tmp
 chmod 777 ${HADOOP_HOME}/tmp
 # Needed for HDFS permissions to work
-groupadd supergroup
+groupadd -f supergroup
 usermod -a -G supergroup ${HADOOP_USER}
 usermod -a -G supergroup ${APP_USER}
 

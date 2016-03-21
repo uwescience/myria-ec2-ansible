@@ -15,9 +15,8 @@
 
 - name: Clone Myria repository
   sudo: no
-  git: repo="{{myria_repository_url}}"
-           dest="{{myria_path}}"
-           version="{{myria_branch}}"
+  git: repo="{{myria_repository_url}}" dest="{{myria_path}}" version="{{myria_branch}}"
+  notify: restart myria
 
 - name: Compile Myria
   shell: "./gradlew shadowJar"
@@ -25,6 +24,7 @@
   args:
     chdir: "{{myria_path}}"
     creates: "{{myria_path}}/build/libs"
+  notify: restart myria
 
 - name: Create deployment configuration file
   shell: "./create_deployment.py {{myria_path}} {{ groups['coordinator_private_name'] | join(' ') }} \
@@ -41,9 +41,12 @@
   args:
     chdir: "{{myria_path}}/myriadeploy"
     creates: "{{myria_path}}/myriadeploy/deployment.cfg"
+  notify: restart myria
 
 - name: Install Myria service
   template: src=service.conf.j2 dest=/etc/init/myria.conf backup=yes mode=0644
+  notify: restart myria
 
-- name: Ensure Myria service is started
-  service: name=myria state=running enabled=yes
+- name: Bounce Myria service on retry
+  command: /bin/true
+  notify: restart myria

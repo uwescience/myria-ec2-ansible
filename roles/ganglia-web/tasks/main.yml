@@ -27,13 +27,13 @@
   tags: ganglia
 
 - name: make apache2 listen on custom port
-  lineinfile: dest=/etc/apache2/ports.conf regexp="^Listen 80" line="Listen {{ ganglia_web_port }}" state=present
+  lineinfile: dest=/etc/apache2/ports.conf regexp="^Listen 80(\s*)$" line="Listen {{ ganglia_web_port }}" backrefs=yes state=present
   notify:
     - restart apache2
   tags: ganglia
 
 - name: create apache2 virtualhost on custom port
-  lineinfile: dest=/etc/apache2/sites-available/000-default.conf regexp="^<VirtualHost \*:80>" line="<VirtualHost *:{{ ganglia_web_port }}>" state=present
+  lineinfile: dest=/etc/apache2/sites-available/000-default.conf regexp="^<VirtualHost \*:80>" line="<VirtualHost *:{{ ganglia_web_port }}>" backrefs=yes state=present
   notify:
     - restart apache2
   tags: ganglia

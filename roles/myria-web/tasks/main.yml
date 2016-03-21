@@ -13,19 +13,22 @@
 
 - name: Clone myria-web repository
   sudo: no
-  git: repo="{{myria_web_repository_url}}" dest="{{myria_web_path}}" version="{{myria_web_branch}}" recursive=yes
+  git: repo="{{myria_web_repository_url}}" dest="{{myria_web_path}}" version="{{myria_web_branch}}" recursive=yes force=yes
+  notify: restart myria-web
 
 - name: Change raco branch
   shell: "git checkout {{raco_branch}}"
   sudo: no
   args:
     chdir: "{{myria_web_path}}/submodules/raco"
+  notify: restart myria-web
 
 - name: Setup raco
   shell: "python setup.py install"
   sudo: yes
   args:
     chdir: "{{myria_web_path}}/submodules/raco"
+  notify: restart myria-web
 
 # this is a disgusting hack but we can't maintain a template file in another repo
 - name: Fill in MyriaX host/port with current values
@@ -33,9 +36,12 @@
   sudo: yes
   args:
     chdir: "{{myria_web_path}}"
+  notify: restart myria-web
 
 - name: Install myria-web service
   template: src=service.conf.j2 dest=/etc/init/myria-web.conf backup=yes mode=0644
+  notify: restart myria-web
 
-- name: Ensure myria-web service is started
-  service: name=myria-web state=running enabled=yes
+- name: Bounce myria-web service on retry
+  command: /bin/true
+  notify: restart myria-web
