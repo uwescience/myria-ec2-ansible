@@ -449,7 +449,12 @@ VIRTUALENV_TARBALL="${VIRTUALENV_PACKAGE}.tar.gz"
 VIRTUALENV_DOWNLOAD_URL="https://pypi.python.org/packages/source/v/virtualenv/${VIRTUALENV_TARBALL}"
 VIRTUALENV_TARBALL_PATH="/tmp/${VIRTUALENV_TARBALL}"
 VIRTUALENV_SRC_DIR="/tmp/${VIRTUALENV_PACKAGE}"
-if ! [ -d "$VIRTUALENV_SRC_DIR" ]; then
+# Mac OS cleaning of /tmp may leave empty directories
+if ! [ -f "$VIRTUALENV_SRC_DIR/virtualenv.py" ]; then
+    if ! rm -rf "$VIRTUALENV_SRC_DIR" 2>&3; then
+        printf '%s\n' "Incomplete virtualenv source directory $VIRTUALENV_SRC_DIR exists but could not be deleted" >&2
+        exit 1
+    fi
     if ! curl -o "$VIRTUALENV_TARBALL_PATH" "$VIRTUALENV_DOWNLOAD_URL" 2>&3; then
         printf '%s\n' "Failed to download package $VIRTUALENV_PACKAGE from $VIRTUALENV_DOWNLOAD_URL" >&2
         exit 1
