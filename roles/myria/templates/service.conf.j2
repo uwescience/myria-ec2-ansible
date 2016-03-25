@@ -1,11 +1,14 @@
 description "myria"
 
-start on startup
-stop on shutdown
+start on (started yarn-master and started yarn-slave)
+stop on (stopped yarn-master or stopped yarn-slave)
 
 setuid {{myria_user}}
 
-respawn limit 1 30
+respawn
+respawn limit unlimited
+
+env SLEEP_TIME=30
 
 script
     . {{ soft_link_base_path }}/hadoop/env.sh
@@ -13,4 +16,12 @@ script
     # configure REEF debug logging
     export YARN_OPTS="$YARN_OPTS -Djava.util.logging.config.class=org.apache.reef.util.logging.Config"
     {{ soft_link_base_path }}/hadoop/bin/yarn jar ${MYRIA_JAR} edu.washington.escience.myria.daemon.MyriaDriverLauncher -runtimeClass org.apache.reef.runtime.yarn.client.YarnClientConfiguration -configPath {{myria_path}}/myriadeploy -javaLibPath {{myria_path}}/build/libs -nativeLibPath {{myria_path}}/lib
+end script
+
+post-stop script
+    # sleep for configured interval between respawn attempts
+    goal=`initctl status $UPSTART_JOB | awk '{print $2}' | cut -d '/' -f 1`
+    if [ $goal != "stop" ]; then
+        sleep $SLEEP_TIME
+    fi
 end script

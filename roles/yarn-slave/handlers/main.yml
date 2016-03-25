@@ -1,0 +1,3 @@
+---
+- name: restart yarn-slave
+  service: name=yarn-slave state=restarted

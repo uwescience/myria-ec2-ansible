@@ -23,19 +23,8 @@ elif len(groups) > 1: # multiple groups found
     print >> sys.stderr, "Multiple groups found with name '%s'" % group_name
     sys.exit(2)
 group = groups[0]
+# TODO: is there a way to do this (filters?) that doesn't require retrieving all instances in the group?
 for instance in group.instances():
-    print >> sys.stderr, "Terminating instance %s" % instance.id
-    instance.terminate()
-print >> sys.stderr, "Deleting security group %s (%s)" % (group.name, group.id)
-# EC2 can take a while to update dependencies, so retry until we succeed
-while True:
-    try:
-        group.delete()
-    except EC2ResponseError as e:
-        if e.error_code == "DependencyViolation":
-            print >> sys.stderr, "Security group state still converging, retrying in 5 seconds..."
-            sleep(5)
-        else:
-            raise
-    else:
+    if instance.tags.get('cluster-role') == "coordinator":
+        print instance.public_dns_name
         break

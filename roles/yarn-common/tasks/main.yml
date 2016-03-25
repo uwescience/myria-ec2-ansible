@@ -18,9 +18,6 @@
   with_items:
           - { path: "{{ hadoop_install_path }}/pbin", mode: '0755' }
           - { path: "{{ hadoop_install_path }}/etc/hadoop", mode: '0755' }
-          - { path: "{{ cgroups_mount_dir }}", mode: '0755' }
-          - { path: "{{ cgroups_mount_dir }}/cpu", mode: '0755' }
-          - { path: "{{ cgroups_mount_dir }}/net_cls", mode: '0755' }
           - { path: "{{ yarn_nm_dir }}", mode: '0755' }
           - { path: "{{ hdfs_namenode_data_dir }}", mode: '0755' }
           - { path: "{{ hdfs_datanode_data_dir }}", mode: '0755' }
@@ -43,12 +40,6 @@
   with_items:
           - { src: 'hadoop-config.sh', dest: 'hadoop-config.sh' }
           - { src: 'provision-hadoop.sh', dest: 'provision-hadoop.sh' }
-
-- name: Copying templated control scripts
-  template: src={{ item.src }} dest="{{ hadoop_install_path }}/pbin" mode=0755
-  with_items:
-          - { src: 'restart-hadoop-master-daemons.sh', dest: 'restart-hadoop-master-daemons.sh' }
-          - { src: 'restart-hadoop-slave-daemons.sh', dest: 'restart-hadoop-slave-daemons.sh' }
 
 - name: Change Directory Permissions.
   file: path={{ hadoop_install_path }}/pbin owner={{ hadoop_user }} group={{ hadoop_group }} recurse=yes

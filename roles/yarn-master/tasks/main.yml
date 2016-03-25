@@ -1,0 +1,4 @@
+---
+- name: Install yarn-master service
+  template: src=service.conf.j2 dest=/etc/init/yarn-master.conf backup=yes mode=0644
+  notify: restart yarn-master

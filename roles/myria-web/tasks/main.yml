@@ -37,6 +37,8 @@
   args:
     chdir: "{{myria_web_path}}"
   notify: restart myria-web
+  tags:
+    - post-start
 
 - name: Install myria-web service
   template: src=service.conf.j2 dest=/etc/init/myria-web.conf backup=yes mode=0644

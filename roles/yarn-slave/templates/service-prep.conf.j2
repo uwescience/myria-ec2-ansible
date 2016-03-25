@@ -1,0 +1,10 @@
+description "yarn-slave-prep"
+
+start on starting yarn-slave
+
+task
+
+script
+    CGROUP_DIR={{ cgroups_mount_dir }}/cpu
+    install -o {{ hadoop_user }} -g {{ hadoop_group }} -m 0755 -d $CGROUP_DIR
+end script

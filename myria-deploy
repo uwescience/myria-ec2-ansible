@@ -14,7 +14,6 @@ MYRIA_ANSIBLE_BRANCH="master"
 
 VIRTUALENV_VERSION=14.0.6
 
-DEFAULT_CLUSTER_NAME="myria"
 DEFAULT_REGION="us-west-2"
 DEFAULT_KEY_PAIR="$USER-myria"
 DEFAULT_INSTANCE_TYPE="t2.large"
@@ -31,9 +30,8 @@ read -r -d '' USAGE <<EOF
 myria-deploy [options]
 options:
 --verbose
---create
---destroy
---cluster-name <defaults to $DEFAULT_CLUSTER_NAME>
+--action <must be one of 'list', 'create', 'start', 'stop', 'destroy'>
+--name <required except when --action list is specified>
 --profile <defaults to none>
 --key-pair <defaults to $DEFAULT_KEY_PAIR>
 --private-key-file <defaults to $HOME/.ssh/${DEFAULT_KEY_PAIR}_${DEFAULT_REGION}.pem>
@@ -69,13 +67,15 @@ case $opt in
     -v|--verbose)
     VERBOSE=1
     ;;
-    -c|--create)
-    CREATE=1
+    -a|--action)
+    if [[ -z "$2" ]]; then
+        echo "$USAGE" >&2
+        exit 1
+    fi
+    ACTION="$2"
+    shift # past argument
     ;;
-    -d|--destroy)
-    DESTROY=1
-    ;;
-    -n|--cluster-name)
+    -n|--name)
     if [[ -z "$2" ]]; then
         echo "$USAGE" >&2
         exit 1
@@ -227,13 +227,13 @@ esac
 shift # past argument or value
 done
 
-if [[ ((-z "$CREATE") && (-z "$DESTROY")) || (! (-z "$CREATE") && ! (-z "$DESTROY")) ]]; then
-    printf '%s\n' 'myria-deploy: You must specify one of --create or --destroy' >&2
+if [[ -z "$ACTION" ]]; then
+    echo "$USAGE" >&2
     exit 1
 fi
 
-if [[ ! (-z "$DESTROY") && (-z "$CLUSTER_NAME") ]]; then
-    printf '%s\n' 'myria-deploy: You must specify --cluster-name if you specify --destroy' >&2
+if [[ (-z "$CLUSTER_NAME") && ("$ACTION" != "list") ]]; then
+    echo "$USAGE" >&2
     exit 1
 fi
 
@@ -250,10 +250,6 @@ fi
 if ! [[ -z "$PROFILE" ]]; then
     PROFILE_ARGS="--profile $PROFILE"
     ANSIBLE_VARS="$ANSIBLE_VARS PROFILE=$PROFILE"
-fi
-
-if [[ -z "$CLUSTER_NAME" ]]; then
-    CLUSTER_NAME="$DEFAULT_CLUSTER_NAME"
 fi
 
 if [[ -z "$REGION" ]]; then
@@ -492,7 +488,7 @@ if ! pip install --verbose boto >&3 2>&3; then
     exit 1
 fi
 
-if [[ -z "$DESTROY" ]]; then
+if [[ "$ACTION" == "create" || "$ACTION" == "start" ]]; then
     # install ansible in virtualenv
     if ! pip install --verbose ansible >&3 2>&3; then
         echo "Failed to install ansible package" >&2
@@ -514,30 +510,67 @@ else
     MYRIA_ANSIBLE_DIR="$MYRIA_ANSIBLE_TMPDIR"
 fi
 
-if ! [[ -z "$DESTROY" ]]; then
+case "$ACTION" in
+    list)
+        export REGION="$REGION"
+        export PROFILE="$PROFILE"
+        export VPC_ID="$VPC_ID"
+        LIST_GROUPS_OUTPUT="$(python "$MYRIA_ANSIBLE_DIR/list_groups.py" 2>&1 | tee >(cat - >&3))"
+        if [ $? -ne 0 ]; then
+            printf '%s\n' "Failed to list Myria clusters:" '' "$LIST_GROUPS_OUTPUT" >&2
+            exit 1
+        fi
+        printf '%s\n' 'Currently deployed Myria clusters:' '' "$LIST_GROUPS_OUTPUT" '' >&2
+        printf '%s\n' 'myria-deploy: SUCCESS' '' "Successfully listed Myria clusters." >&2
+    ;;
+    start|stop|destroy)
+        export REGION="$REGION"
+        export GROUP_NAME="$CLUSTER_NAME"
+        export ACTION="$ACTION"
+        export PROFILE="$PROFILE"
+        export VPC_ID="$VPC_ID"
+        CONTROL_INSTANCES_OUTPUT="$(python "$MYRIA_ANSIBLE_DIR/control_instances.py" 2>&1 | tee >(cat - >&3))"
+        if [ $? -ne 0 ]; then
+            printf '%s\n' "Failed to $ACTION cluster '$CLUSTER_NAME':" '' "$CONTROL_INSTANCES_OUTPUT" >&2
+            exit 1
+        fi
+        printf '%s\n' 'myria-deploy: SUCCESS' '' "Successfully executed '$ACTION' command on cluster '$CLUSTER_NAME'." >&2
+    ;;
+    create)
+        echo "Provisioning cluster..." >&2
+        ANSIBLE_OUTPUT="$(ansible-playbook "$MYRIA_ANSIBLE_DIR/site.yml" --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE" --forks=20 2>&1 | tee >(cat - >&3))"
+        if [ $? -ne 0 ]; then
+            printf '%s\n' "Ansible deployment failed:" '' "$ANSIBLE_OUTPUT" >&2
+            exit 1
+        fi
+        printf '%s\n' 'myria-deploy: SUCCESS' '' "Successfully created cluster '$CLUSTER_NAME'." >&2
+    ;;
+    *)
+        printf '%s\n' "Unknown action: '$ACTION'" >&2
+        exit 1
+    ;;
+esac
+if [[ "$ACTION" == "start" ]]; then
     export REGION="$REGION"
     export GROUP_NAME="$CLUSTER_NAME"
     export PROFILE="$PROFILE"
     export VPC_ID="$VPC_ID"
-    DESTROY_CLUSTER_OUTPUT="$(python "$MYRIA_ANSIBLE_DIR/delete_security_group_with_instances.py" 2>&1 | tee >(cat - >&3))"
+    COORDINATOR_NAME="$(python "$MYRIA_ANSIBLE_DIR/get_coordinator_name.py" 2>&3)"
+    printf '%s\n' '' "New coordinator public DNS:" "$COORDINATOR_NAME" >&2
+    echo "Reconfiguring cluster after restart..." >&2
+    ANSIBLE_POST_START_OUTPUT="$(ansible-playbook "$MYRIA_ANSIBLE_DIR/restart.yml" -i "$COORDINATOR_NAME," --extra-vars "$ANSIBLE_VARS COORDINATOR_NAME=$COORDINATOR_NAME" --private-key "$PRIVATE_KEY_FILE" --tags post-start 2>&1 | tee >(cat - >&3))"
     if [ $? -ne 0 ]; then
-        printf '%s\n' "Failed to destroy cluster '$CLUSTER_NAME':" '' "$DESTROY_CLUSTER_OUTPUT" >&2
+        printf '%s\n' "Ansible redeployment failed:" '' "$ANSIBLE_POST_START_OUTPUT" >&2
         exit 1
     fi
-    printf '%s\n' 'myria-deploy: SUCCESS' '' "Cluster '$CLUSTER_NAME' successfully destroyed." >&2
-else
-    echo "Provisioning cluster..." >&2
-    ANSIBLE_OUTPUT="$(ansible-playbook "$MYRIA_ANSIBLE_DIR/site.yml" --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE" --forks=20 2>&1 | tee >(cat - >&3))"
-    if [ $? -ne 0 ]; then
-        printf '%s\n' "Ansible deployment failed:" '' "$ANSIBLE_OUTPUT" >&2
-        exit 1
-    fi
+    printf '%s\n' 'myria-deploy: SUCCESS' '' "Successfully restarted cluster '$CLUSTER_NAME'." >&2
+fi
+if [[ "$ACTION" == "create" || "$ACTION" == "start" ]]; then
     MYRIA_WEB_URL=$(cat /tmp/${CLUSTER_NAME}-myria-web.url)
     MYRIA_REST_URL=$(cat /tmp/${CLUSTER_NAME}-myria-rest.url)
     GANGLIA_WEB_URL=$(cat /tmp/${CLUSTER_NAME}-ganglia-web.url)
     MYRIA_SSH_USER_HOST=$(cat /tmp/${CLUSTER_NAME}-myria-ssh-user-host.txt)
     MYRIA_SSH_CMD="ssh -i $PRIVATE_KEY_FILE $MYRIA_SSH_USER_HOST"
-    printf '%s\n' 'myria-deploy: SUCCESS' '' "myria-web interface available at $MYRIA_WEB_URL" "MyriaX REST endpoint available at $MYRIA_REST_URL" "Ganglia web interface available at $GANGLIA_WEB_URL" '' "Log into coordinator:" "$MYRIA_SSH_CMD" >&2
+    printf '%s\n' '' "myria-web interface available at $MYRIA_WEB_URL" "MyriaX REST endpoint available at $MYRIA_REST_URL" "Ganglia web interface available at $GANGLIA_WEB_URL" '' "Log into coordinator:" "$MYRIA_SSH_CMD" >&2
 fi
-
 exit 0

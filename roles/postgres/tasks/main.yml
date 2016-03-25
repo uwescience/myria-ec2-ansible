@@ -59,7 +59,7 @@
   notify: restart postgresql
 
 - name: reset the cluster - create a new one (with specified encoding and locale)
-  shell: 'pg_createcluster --user=postgres --group=postgres --locale {{ postgres_locale }} -e {{ postgres_encoding }} -d {{ postgres_data_dir }} {{ postgres_version }} {{ postgres_cluster_name }}'
+  shell: 'pg_createcluster --start --user=postgres --group=postgres --locale {{ postgres_locale }} -e {{ postgres_encoding }} -d {{ postgres_data_dir }} {{ postgres_version }} {{ postgres_cluster_name }}'
   args:
     creates: "{{ postgres_data_dir }}"
   sudo: yes
@@ -67,28 +67,29 @@
 
 - name: altering postgresql.conf - adding listeners
   lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/postgresql.conf
-                regexp="^[#]?listen_addresses"
-                line="listen_addresses = '*'" state=present
-                backup=yes
+              regexp="^[#]?listen_addresses"
+              line="listen_addresses = '*'"
+              state=present
   notify: restart postgresql
 
 - name: altering pg_hba.conf - adding listeners
   lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/pg_hba.conf
-                line="host    all   all        0.0.0.0/0   md5" state=present
-                backup=yes
+              line="host    all   all        0.0.0.0/0   md5"
+              state=present
   notify: restart postgresql
 
 - name: altering postgresql.conf - changing shared_buffers
   lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/postgresql.conf
-                regexp="^[#]?shared_buffers"
-                line="shared_buffers = {{shared_buffers_mb}}MB" state=present
-                backup=yes
+              regexp="^[#]?shared_buffers"
+              line="shared_buffers = {{shared_buffers_mb}}MB"
+              state=present
   notify: restart postgresql
 
 - name: altering postgresql.conf - changing work_mem
   lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/postgresql.conf
-                line="[#]?work_mem = {{work_mem_mb}}MB" state=present
-                backup=yes
+              regexp="^[#]?work_mem"
+              line="work_mem = {{work_mem_mb}}MB"
+              state=present
   notify: restart postgresql
 
 - name: Create database instance

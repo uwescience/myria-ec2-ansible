@@ -82,6 +82,15 @@
     fail: msg="Security group '{{CLUSTER_NAME}}' already exists. Please terminate all instances in this security group and then delete the security group."
     when: not (ec2_group.changed)
 
+  - name: Tag security group to designate as Myria cluster
+    ec2_tag:
+      profile: "{{PROFILE | default(omit)}}"
+      region: "{{REGION}}"
+      resource: "{{ec2_group.group_id}}"
+      state: present
+      tags:
+        app: "myria"
+
   - name: Launch instances
     ec2:
       profile: "{{PROFILE | default(omit)}}"
@@ -205,7 +214,7 @@
   sudo: yes
   gather_facts: false
   roles:
-    - yarn-rm
+    - yarn-master
 
 - name: Configure YARN NM
   hosts: nmnodes
@@ -213,7 +222,7 @@
   sudo: yes
   gather_facts: false
   roles:
-    - yarn-nm
+    - yarn-slave
 
 - name: Configure Ganglia UI on coordinator
   hosts: coordinators

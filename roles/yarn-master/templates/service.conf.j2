@@ -1,0 +1,47 @@
+description "yarn-master"
+
+start on (local-filesystems and net-device-up IFACE!=lo)
+stop on [!2345]
+
+setuid {{ hadoop_user }}
+
+respawn
+respawn limit unlimited
+
+env SLEEP_TIME=1
+env MAX_SLEEP_TIME=120
+
+pre-start script
+    . {{ soft_link_base_path }}/hadoop/env.sh
+{% raw %}
+    ${HADOOP_HOME}/bin/hadoop namenode -format -nonInteractive || true
+    ${HADOOP_HOME}/sbin/hadoop-daemon.sh start namenode
+    ${HADOOP_HOME}/sbin/yarn-daemon.sh start resourcemanager
+{% endraw %}
+end script
+
+# check for running processes since the daemon startup scripts exit after starting daemon
+script
+    while ((jps | grep -q NameNode) && (jps | grep -q ResourceManager)); do
+    sleep 5
+  done
+end script
+
+post-stop script
+    # exponential backoff
+    goal=`initctl status $UPSTART_JOB | awk '{print $2}' | cut -d '/' -f 1`
+    if [ $goal != "stop" ]; then
+        sleep $SLEEP_TIME
+        NEW_SLEEP_TIME=`expr 2 \* $SLEEP_TIME`
+        if [ $NEW_SLEEP_TIME -ge $MAX_SLEEP_TIME ]; then
+            NEW_SLEEP_TIME=$MAX_SLEEP_TIME
+        fi
+        initctl set-env SLEEP_TIME=$NEW_SLEEP_TIME
+    fi
+
+    . {{ soft_link_base_path }}/hadoop/env.sh
+{% raw %}
+    ${HADOOP_HOME}/sbin/yarn-daemon.sh stop resourcemanager
+    ${HADOOP_HOME}/sbin/hadoop-daemon.sh stop namenode
+{% endraw %}
+end script
