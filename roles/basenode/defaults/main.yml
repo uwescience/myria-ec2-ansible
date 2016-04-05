@@ -1,6 +1,6 @@
 ---
 # the OS will unpredictably translate our requested device name, we just have to record the result here
 data_vol_real_device_name: /dev/xvdb
-
-jdk8_url: http://s3-us-west-2.amazonaws.com/uwdb/myria/deploy-cache/oracle-jdk8-installer/jdk-8u74-linux-x64.tar.gz
-jdk8_file: /var/cache/oracle-jdk8-installer/jdk-8u74-linux-x64.tar.gz
+jdk8_version: 8u77
+jdk8_url: http://s3-us-west-2.amazonaws.com/uwdb/myria/deploy-cache/oracle-jdk8-installer/jdk-{{jdk8_version}}-linux-x64.tar.gz
+jdk8_file: /var/cache/oracle-jdk8-installer/jdk-{{jdk8_version}}-linux-x64.tar.gz
