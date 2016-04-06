@@ -8,8 +8,7 @@ setuid {{ hadoop_user }}
 respawn
 respawn limit unlimited
 
-env SLEEP_TIME=1
-env MAX_SLEEP_TIME=120
+env SLEEP_TIME=30
 
 pre-start script
     . {{ soft_link_base_path }}/hadoop/env.sh
@@ -28,15 +27,10 @@ script
 end script
 
 post-stop script
-    # exponential backoff
+    # sleep for configured interval between respawn attempts
     goal=`initctl status $UPSTART_JOB | awk '{print $2}' | cut -d '/' -f 1`
     if [ $goal != "stop" ]; then
         sleep $SLEEP_TIME
-        NEW_SLEEP_TIME=`expr 2 \* $SLEEP_TIME`
-        if [ $NEW_SLEEP_TIME -ge $MAX_SLEEP_TIME ]; then
-            NEW_SLEEP_TIME=$MAX_SLEEP_TIME
-        fi
-        initctl set-env SLEEP_TIME=$NEW_SLEEP_TIME
     fi
 
     . {{ soft_link_base_path }}/hadoop/env.sh
