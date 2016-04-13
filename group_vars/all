@@ -79,3 +79,5 @@ gae_dirname: google_appengine
 ganglia_monitor_port: 8649
 ganglia_web_port: 8090
 ganglia_conf_dir: /etc/ganglia
+ganglia_user: ganglia
+ganglia_group: ganglia

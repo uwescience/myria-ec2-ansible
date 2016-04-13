@@ -100,7 +100,7 @@ authority "http://{{ hostvars[groups['coordinator_name'][0]].inventory_hostname 
 #-------------------------------------------------------------------------------
 # User gmetad will setuid to (defaults to "nobody")
 # default: "nobody"
-# setuid_username "nobody"
+setuid_username "{{ ganglia_user }}"
 #
 #-------------------------------------------------------------------------------
 # Umask to apply to created rrd files and grid directory structure
@@ -126,7 +126,7 @@ authority "http://{{ hostvars[groups['coordinator_name'][0]].inventory_hostname 
 #-------------------------------------------------------------------------------
 # Where gmetad stores its round-robin databases
 # default: "/var/lib/ganglia/rrds"
-# rrd_rootdir "/some/other/place"
+rrd_rootdir "{{ rrd_root_dir }}"
 #
 #-------------------------------------------------------------------------------
 # In earlier versions of gmetad, hostnames were handled in a case
