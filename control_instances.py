@@ -34,8 +34,10 @@ def stop_cluster(security_group):
 
 def destroy_cluster(security_group):
     instance_ids = [instance.id for instance in security_group.instances()]
-    print >> sys.stderr, "Terminating instances %s" % ', '.join(instance_ids)
-    ec2.terminate_instances(instance_ids=instance_ids)
+    # we want to allow users to delete a security group with no instances
+    if instance_ids:
+        print >> sys.stderr, "Terminating instances %s" % ', '.join(instance_ids)
+        ec2.terminate_instances(instance_ids=instance_ids)
     print >> sys.stderr, "Deleting security group %s (%s)" % (security_group.name, security_group.id)
     # EC2 can take a while to update dependencies, so retry until we succeed
     while True:
