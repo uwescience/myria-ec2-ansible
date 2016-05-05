@@ -520,8 +520,16 @@ case "$ACTION" in
             printf '%s\n' "Failed to list Myria clusters:" '' "$LIST_GROUPS_OUTPUT" >&2
             exit 1
         fi
-        printf '%s\n' 'Currently deployed Myria clusters:' '' "$LIST_GROUPS_OUTPUT" '' >&2
-        printf '%s\n' 'myria-deploy: SUCCESS' '' "Successfully listed Myria clusters." >&2
+        printf '%s\n' 'Currently deployed Myria clusters:' ''
+        OUTPUT="CLUSTER COORDINATOR"
+        OUTPUT="$OUTPUT\n------- -----------"
+        while read -r cluster; do
+            export GROUP_NAME="$cluster"
+            COORDINATOR_NAME="$(python "$MYRIA_ANSIBLE_DIR/get_coordinator_name.py" 2>&3)"
+            OUTPUT="$OUTPUT\n$cluster $COORDINATOR_NAME"
+        done <<< "$LIST_GROUPS_OUTPUT"
+        echo -e $OUTPUT | column -t >&2
+        printf '%s\n' '' 'myria-deploy: SUCCESS' '' "Successfully listed Myria clusters." >&2
     ;;
     start|stop|destroy)
         export REGION="$REGION"
