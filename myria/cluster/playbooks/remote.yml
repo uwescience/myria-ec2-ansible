@@ -1,0 +1,64 @@
+---
+# ansible-playbook "$MYRIA_ANSIBLE_DIR/site.yml" --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE"
+- name: Gather EC2 facts
+  hosts: ec2
+  gather_facts: true
+  remote_user: ubuntu
+  become: yes
+  become_user: root
+  tasks:
+    - ec2_facts:
+
+- name: Configure common functionality on all nodes
+  hosts: ec2
+  remote_user: ubuntu
+  sudo: yes
+  gather_facts: false
+  roles:
+    - basenode
+    - yarn-common
+    - postgres
+    - ganglia-monitor
+
+- name: Configure YARN RM
+  hosts: tag_cluster_role_coordinator
+  remote_user: ubuntu
+  sudo: yes
+  gather_facts: false
+  roles:
+    - yarn-master
+
+- name: Configure YARN NM
+  hosts: ec2
+  remote_user: ubuntu
+  sudo: yes
+  gather_facts: false
+  roles:
+    - yarn-slave
+
+- name: Configure Ganglia UI on coordinator
+  hosts: tag_cluster_role_coordinator
+  remote_user: ubuntu
+  sudo: yes
+  gather_facts: false
+  roles:
+    - ganglia-metad
+    - ganglia-web
+
+- name: Configure and launch MyriaX on coordinator
+  hosts: tag_cluster_role_coordinator
+  remote_user: ubuntu
+  sudo: yes
+  gather_facts: false
+  roles:
+    - myria-python
+    - myria
+
+- name: Install and launch myria-web on coordinator
+  hosts: tag_cluster_role_coordinator
+  remote_user: ubuntu
+  sudo: yes
+  gather_facts: false
+  roles:
+    - gae
+    - myria-web

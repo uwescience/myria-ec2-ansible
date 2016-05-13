@@ -1,0 +1,27 @@
+description "myria-web"
+
+start on started myria
+stop on stopped myria
+
+setuid {{myria_user}}
+
+respawn
+respawn limit unlimited
+
+env SLEEP_TIME=30
+
+# need to reconfigure Myria public IP on service start since it could change when instance is restarted
+pre-start script
+    ip=`curl http://169.254.169.254/latest/meta-data/public-ipv4`
+    sed -i -e "s;MYRIAX_REST_HOST.*$;MYRIAX_REST_HOST: $ip;g" -e 's;MYRIAX_REST_PORT.*$;MYRIAX_REST_PORT: {{ myria_rest_port }};g' {{myria_web_path}}/appengine/app.yaml
+end script
+
+exec {{gae_base_dir}}/{{gae_dirname}}/dev_appserver.py --host=0.0.0.0 --port={{ myria_web_port }} --skip_sdk_update_check=true {{myria_web_path}}/appengine
+
+post-stop script
+    # sleep for configured interval between respawn attempts
+    goal=`initctl status $UPSTART_JOB | awk '{print $2}' | cut -d '/' -f 1`
+    if [ $goal != "stop" ]; then
+        sleep $SLEEP_TIME
+    fi
+end script

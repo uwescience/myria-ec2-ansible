@@ -1,0 +1,45 @@
+description "yarn-slave"
+
+{% if ansible_ec2_public_ipv4 in groups['tag_cluster_role_coordinator'] %}
+start on started yarn-master
+stop on stopped yarn-master
+{%  else %}
+start on (local-filesystems and net-device-up IFACE!=lo)
+stop on [!2345]
+{%  endif %}
+
+setuid {{ hadoop_user }}
+
+respawn
+respawn limit unlimited
+
+env SLEEP_TIME=30
+
+pre-start script
+    . {{ soft_link_base_path }}/hadoop/env.sh
+{% raw %}
+    ${HADOOP_HOME}/sbin/hadoop-daemon.sh start datanode
+    ${HADOOP_HOME}/sbin/yarn-daemon.sh start nodemanager
+{% endraw %}
+end script
+
+# check for running processes since the daemon startup scripts exit after starting daemon
+script
+    while ((jps | grep -q DataNode) && (jps | grep -q NodeManager)); do
+    sleep 5
+  done
+end script
+
+post-stop script
+    # sleep for configured interval between respawn attempts
+    goal=`initctl status $UPSTART_JOB | awk '{print $2}' | cut -d '/' -f 1`
+    if [ $goal != "stop" ]; then
+        sleep $SLEEP_TIME
+    fi
+
+    . {{ soft_link_base_path }}/hadoop/env.sh
+{% raw %}
+    ${HADOOP_HOME}/sbin/yarn-daemon.sh stop nodemanager
+    ${HADOOP_HOME}/sbin/hadoop-daemon.sh stop datanode
+{% endraw %}
+end script
