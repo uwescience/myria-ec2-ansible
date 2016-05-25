@@ -81,3 +81,9 @@ ganglia_web_port: 8090
 ganglia_conf_dir: /etc/ganglia
 ganglia_user: ganglia
 ganglia_group: ganglia
+
+#----------------------------------
+#   Jupyter Variables
+#----------------------------------
+
+jupyter_web_port: 8888

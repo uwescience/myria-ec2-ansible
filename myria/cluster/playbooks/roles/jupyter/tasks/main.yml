@@ -1,0 +1,34 @@
+---
+- name: Install Jupyter metapackage
+  pip: name=jupyter version={{ jupyter_metapackage_version }}
+
+- name: Generate Jupyter notebook server config file
+  command: creates={{ jupyter_config_output_path }} jupyter notebook --generate-config
+
+- name: Create config directory
+  file: path={{ jupyter_config_dir }} state=directory mode=0755
+
+- name: Copy config file to final location
+  copy: remote_src=True src={{ jupyter_config_output_path }} dest={{ jupyter_config_file }} mode=0644
+
+- name: Create notebook directory
+  file: path={{ jupyter_notebooks_dir }} state=directory mode=0755 recurse=yes
+
+- name: Copy sample notebook to notebook directory
+  get_url: url='{{ jupyter_sample_notebook_url }}' dest='{{ jupyter_notebooks_dir }}/myria_examples.ipynb' mode=0755 validate_certs=no timeout=300
+
+- name: Listen on all interfaces
+  lineinfile: dest={{ jupyter_config_file }} regexp="^#?\s*c.NotebookApp.ip" line="c.NotebookApp.ip = '*'" backrefs=yes state=present
+
+- name: Listen on configured port
+  lineinfile: dest={{ jupyter_config_file }} regexp="^#?\s*c.NotebookApp.port" line="c.NotebookApp.port = {{ jupyter_web_port }}" backrefs=yes state=present
+
+- name: Don't try to open browser on headless system
+  lineinfile: dest={{ jupyter_config_file }} regexp="^#?\s*c.NotebookApp.open_browser" line="c.NotebookApp.open_browser = False" backrefs=yes state=present
+
+- name: Configure notebook directory
+  lineinfile: dest={{ jupyter_config_file }} regexp="^#?\s*c.NotebookApp.notebook_dir" line="c.NotebookApp.notebook_dir = '{{ jupyter_notebooks_dir }}'" backrefs=yes state=present
+
+- name: Install jupyter-notebook service
+  template: src=service.conf.j2 dest=/etc/init/jupyter-notebook.conf backup=yes mode=0644
+  notify: restart jupyter-notebook

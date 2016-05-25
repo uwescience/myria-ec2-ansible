@@ -1,0 +1,21 @@
+description "jupyter-notebook"
+
+start on started myria
+stop on stopped myria
+
+setuid {{myria_user}}
+
+respawn
+respawn limit unlimited
+
+env SLEEP_TIME=30
+
+exec jupyter-notebook --config='{{ jupyter_config_file }}'
+
+post-stop script
+    # sleep for configured interval between respawn attempts
+    goal=`initctl status $UPSTART_JOB | awk '{print $2}' | cut -d '/' -f 1`
+    if [ $goal != "stop" ]; then
+        sleep $SLEEP_TIME
+    fi
+end script

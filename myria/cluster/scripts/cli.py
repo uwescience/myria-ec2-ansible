@@ -501,10 +501,14 @@ http://{coordinator_public_hostname}:{myria_rest_port}
 
 Ganglia web interface:
 http://{coordinator_public_hostname}:{ganglia_web_port}
+
+Jupyter notebook interface:
+http://{coordinator_public_hostname}:{jupyter_web_port}
 """.format(coordinator_public_hostname=coordinator_public_hostname, myria_web_port=ANSIBLE_GLOBAL_VARS['myria_web_port'],
            myria_rest_port=ANSIBLE_GLOBAL_VARS['myria_rest_port'], ganglia_web_port=ANSIBLE_GLOBAL_VARS['ganglia_web_port'],
-           private_key_file=kwargs['private_key_file'], myria_user=ANSIBLE_GLOBAL_VARS['myria_user'],
-           script_name=SCRIPT_NAME, cluster_name=cluster_name, region=kwargs['region'], options=options_str))
+           jupyter_web_port=ANSIBLE_GLOBAL_VARS['jupyter_web_port'], private_key_file=kwargs['private_key_file'],
+           myria_user=ANSIBLE_GLOBAL_VARS['myria_user'], script_name=SCRIPT_NAME, cluster_name=cluster_name,
+           region=kwargs['region'], options=options_str))
 
 
 @run.command('destroy')

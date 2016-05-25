@@ -6,24 +6,29 @@
 - name: Installing packages
   apt: name="{{item}}" update_cache=yes
   with_items:
-    - git
-    - python-setuptools
-    - build-essential 
-    - libffi-dev
-    - libssl-dev
-    - python-lxml
+  - git
+  - python-setuptools
+  - build-essential
+  - libffi-dev
+  - libssl-dev
+  - python-lxml
 
 - name: Clone Myria python repository
   sudo: no
-  git: repo="{{myria_python_repository_url}}"
-           dest="{{myria_python}}"
+  git: repo="{{myria_python_repository_url}}" dest="{{myria_python}}"
 
 - name: Install pip
   shell: "easy_install pip"
   sudo: yes 
 
+- name: Install myria-python dependencies
+  pip: name={{ item }}
+  with_items:
+  - numpy
+  - pandas
+
 - name: Setup myria-python
   shell: "python setup.py install"
   sudo: yes
   args:
-        chdir: "{{myria_python}}"
+    chdir: "{{myria_python}}"

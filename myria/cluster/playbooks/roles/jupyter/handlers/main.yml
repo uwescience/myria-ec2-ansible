@@ -1,0 +1,3 @@
+---
+- name: restart jupyter-notebook
+  service: name=jupyter-notebook state=restarted enabled=yes

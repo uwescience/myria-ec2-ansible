@@ -62,3 +62,11 @@
   roles:
     - gae
     - myria-web
+
+- name: Install and launch jupyter-notebook on coordinator
+  hosts: tag_cluster_role_coordinator
+  remote_user: ubuntu
+  sudo: yes
+  gather_facts: false
+  roles:
+    - jupyter
