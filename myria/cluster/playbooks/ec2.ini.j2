@@ -3,7 +3,7 @@
 regions = {{ REGION }}
 instance_states = running
 instance_filters = instance.group-name={{ CLUSTER_NAME }}
-boto_profile = {{ PROFILE }}
+boto_profile = {{PROFILE | default("default")}}
 
 # Ansible EC2 external inventory script settings
 #
