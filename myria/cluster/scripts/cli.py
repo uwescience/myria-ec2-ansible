@@ -488,7 +488,10 @@ first.
     if failed_hosts:
         # If the local playbook fails, the only failed host must be localhost.
         click.echo("Failed to initialize EC2 instances, destroying cluster...")
-        terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+        try:
+            terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+        except:
+            pass # best-effort
         sys.exit(1)
 
     # run remote playbook to provision EC2 instances
