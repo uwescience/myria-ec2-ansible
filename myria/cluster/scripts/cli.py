@@ -70,10 +70,11 @@ class Options(object):
     """
     Options class to replace Ansible OptParser
     """
-    def __init__(self, syntax=False, listhosts=False, listtasks=False, listtags=False, module_path=None,
+    def __init__(self, subset=None, syntax=False, listhosts=False, listtasks=False, listtags=False, module_path=None,
                  forks=MAX_CONCURRENT_TASKS, connection='smart', remote_user=None, private_key_file=None,
                  ssh_common_args=None, sftp_extra_args=None, scp_extra_args=None, ssh_extra_args=None,
                  become=False, become_method='sudo', become_user='root', verbosity=0, check=False):
+        self.subset = subset
         self.syntax = syntax
         self.listhosts = listhosts
         self.listtasks = listtasks
@@ -96,13 +97,15 @@ class Options(object):
 
 class Runner(object):
 
-    def __init__(self, hostnames, playbook, private_key_file, run_data, become_pass=None, verbosity=0, callback=None):
+    def __init__(self, hostnames, playbook, private_key_file, run_data, become_pass=None,
+                 verbosity=0, callback=None, subset_pattern=None):
 
         self.hostnames = hostnames
+
         self.playbook = os.path.join(playbooks_dir, playbook)
         self.run_data = run_data
 
-        self.options = Options(private_key_file=private_key_file, verbosity=verbosity)
+        self.options = Options(subset=subset_pattern, private_key_file=private_key_file, verbosity=verbosity)
 
         self.display = Display()
         self.display.verbosity = verbosity
@@ -490,19 +493,19 @@ first.
 
     # run remote playbook to provision EC2 instances
     retries = 0
-    hostnames = INVENTORY_SCRIPT_PATH
+    retry_hosts_pattern = None
     # TODO: exponential backoff for unreachable hosts?
     while True:
         retry_hosts = set()
-        playbook_args.update(hostnames=hostnames, playbook="remote.yml", callback=CallbackModule(retry_hosts))
+        playbook_args.update(hostnames=INVENTORY_SCRIPT_PATH, playbook="remote.yml", callback=CallbackModule(retry_hosts), subset_pattern=retry_hosts_pattern)
         remote_runner = Runner(**playbook_args)
         stats = remote_runner.run()
         print stats
         if retry_hosts:
             if retries < MAX_RETRIES:
                 retries += 1
-                hostnames = list(retry_hosts)
-                click.echo("Retrying playbook run on hosts %s (%d of %d)" % (', '.join(hostnames), retries, MAX_RETRIES))
+                retry_hosts_pattern = ",".join(retry_hosts)
+                click.echo("Retrying playbook run on hosts %s (%d of %d)" % (retry_hosts_pattern, retries, MAX_RETRIES))
             else:
                 click.echo("Maximum retries (%d) exceeded, destroying cluster..." % MAX_RETRIES)
                 terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
