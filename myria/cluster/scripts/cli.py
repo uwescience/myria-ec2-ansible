@@ -354,11 +354,12 @@ def default_key_file_from_key_pair(ctx, param, value):
         if ctx.params['profile']:
             qualified_key_pair = "%s_%s_%s" % (ctx.params['key_pair'], ctx.params['profile'], ctx.params['region'])
         return "%s/.ssh/%s.pem" % (HOME, qualified_key_pair)
+    else:
+        return value
 
 
 def default_ami_id_from_region(ctx, param, value):
-    if value is None:
-        return DEFAULT_AMI_IDS[ctx.params['region']]
+    return value if value is not None else DEFAULT_AMI_IDS[ctx.params['region']]
 
 
 @click.group(context_settings=CONTEXT_SETTINGS)
