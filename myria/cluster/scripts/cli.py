@@ -9,17 +9,22 @@ from collections import namedtuple
 import click
 import yaml
 
+import boto
+from boto.ec2 import connect_to_region
+import boto.vpc
+from boto.exception import EC2ResponseError
+
+# Ansible configuration variables to set before importing Ansible modules
+os.environ['ANSIBLE_SSH_ARGS'] = "-o ControlMaster=auto -o ControlPersist=60s -o UserKnownHostsFile=/dev/null"
+os.environ['ANSIBLE_RECORD_HOST_KEYS'] = "False"
+os.environ['ANSIBLE_HOST_KEY_CHECKING'] = "False"
+
 from ansible.inventory import Inventory
 from ansible.vars import VariableManager
 from ansible.parsing.dataloader import DataLoader
 from ansible.executor import playbook_executor
 from ansible.utils.display import Display
 from ansible.plugins.callback import CallbackBase
-
-import boto
-from boto.ec2 import connect_to_region
-import boto.vpc
-from boto.exception import EC2ResponseError
 
 from myria.cluster.playbooks import playbooks_dir
 
@@ -410,6 +415,7 @@ def create_cluster(cluster_name, **kwargs):
             click.echo("%s: %s" % (k, v))
     ec2_ini_tmpfile = NamedTemporaryFile(delete=False)
     os.environ['EC2_INI_PATH'] = ec2_ini_tmpfile.name
+
     # for displaying example commands
     options_str = "--region %s" % kwargs['region']
     if kwargs['profile']:
