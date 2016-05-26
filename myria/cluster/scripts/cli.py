@@ -411,6 +411,18 @@ def create_cluster(cluster_name, **kwargs):
     if kwargs['vpc_id']:
         options_str += " --vpc-id %s" % kwargs['vpc_id']
 
+    # abort if credentials are not available
+    try:
+        connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
+    except:
+        click.echo("""
+Unable to connect to the '{region}' EC2 region using the '{profile}' profile.
+Please ensure that your AWS credentials are correctly configured:
+
+http://boto3.readthedocs.io/en/latest/guide/configuration.html
+""".format(region=kwargs['region'], profile=kwargs['profile'] if kwargs['profile'] else "default"))
+        sys.exit(1)
+
     # abort if cluster already exists
     try:
         get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
