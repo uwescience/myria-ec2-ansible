@@ -18,6 +18,7 @@ from ansible.plugins.callback import CallbackBase
 
 import boto
 from boto.ec2 import connect_to_region
+import boto.vpc
 from boto.exception import EC2ResponseError
 
 from myria.cluster.playbooks import playbooks_dir
@@ -423,6 +424,17 @@ Please ensure that your AWS credentials are correctly configured:
 http://boto3.readthedocs.io/en/latest/guide/configuration.html
 """.format(region=kwargs['region'], profile=kwargs['profile'] if kwargs['profile'] else "default"))
         sys.exit(1)
+
+    # abort if vpc_id is not supplied and no default VPC exists
+    if not kwargs['vpc_id']:
+        vpc_conn = boto.vpc.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
+        default_vpcs = vpc_conn.get_all_vpcs(filters={'isDefault': "true"})
+        if not default_vpcs:
+            click.echo("""
+No default VPC is configured for your AWS account in the '{region}' region.
+Please ask your administrator to create a default VPC or specify a VPC using the `--vpc-id` option.
+""".format(region=kwargs['region']))
+            sys.exit(1)
 
     # abort if cluster already exists
     try:
