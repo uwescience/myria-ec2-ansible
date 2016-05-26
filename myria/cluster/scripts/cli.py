@@ -2,6 +2,7 @@
 
 import sys
 import os
+import signal
 from time import sleep
 from tempfile import NamedTemporaryFile
 from collections import namedtuple
@@ -435,6 +436,21 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
 first.
 """.format(script_name=SCRIPT_NAME, cluster_name=cluster_name, region=kwargs['region'], options=options_str))
         sys.exit(1)
+
+    # install keyboard interrupt handler to destroy partially-deployed cluster
+    # TODO: signal handlers are inherited by each child process spawned by Ansible,
+    # so messages are (harmlessly) duplicated for each process.
+    def signal_handler(sig, frame):
+        # uninstall handler to prevent multiple calls
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        click.echo("User interrupted deployment, destroying cluster...")
+        try:
+            terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+        except:
+            pass # best-effort
+        sys.exit(1)
+
+    signal.signal(signal.SIGINT, signal_handler)
 
     extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None)
     extra_vars.update(CLUSTER_NAME=cluster_name)
