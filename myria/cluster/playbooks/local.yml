@@ -13,6 +13,7 @@
     ec2_key:
       name: "{{KEY_PAIR}}"
       region: "{{REGION}}"
+      profile: "{{PROFILE | default(omit)}}"
     register: key_pair
   - name: Check for existing private key file
     stat: path="{{PRIVATE_KEY_FILE}}"
