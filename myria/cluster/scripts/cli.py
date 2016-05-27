@@ -18,6 +18,7 @@ from boto.exception import EC2ResponseError
 os.environ['ANSIBLE_SSH_ARGS'] = "-o ControlMaster=auto -o ControlPersist=60s -o UserKnownHostsFile=/dev/null"
 os.environ['ANSIBLE_RECORD_HOST_KEYS'] = "False"
 os.environ['ANSIBLE_HOST_KEY_CHECKING'] = "False"
+os.environ['ANSIBLE_SSH_PIPELINING'] = "True"
 
 from ansible.inventory import Inventory
 from ansible.vars import VariableManager
