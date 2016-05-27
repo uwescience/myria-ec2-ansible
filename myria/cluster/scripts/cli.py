@@ -181,7 +181,7 @@ class CallbackModule(CallbackBase):
             # error = result._result['exception'].strip().split('\n')[-1]
             # print(error)
             msg = "An exception occurred during task execution. The full traceback is:\n" + result._result['exception']
-            print msg
+            print(msg)
 
             # Remove the exception from the result so it's not shown every time
             del result._result['exception']
@@ -274,7 +274,7 @@ class CallbackModule(CallbackBase):
         delegated_vars = result._result.get('_ansible_delegated_vars', None)
         if 'exception' in result._result:
             msg = "An exception occurred during task execution. The full traceback is:\n" + result._result['exception']
-            print msg
+            print(msg)
             # Remove the exception from the result so it's not shown every time
             del result._result['exception']
 
@@ -306,13 +306,15 @@ class CallbackModule(CallbackBase):
 
 def get_security_group_for_cluster(cluster_name, region, profile=None, vpc_id=None):
     ec2 = connect_to_region(region, profile_name=profile)
-    groups_by_name = ec2.get_all_security_groups(filters={'group-name': cluster_name})
-    groups = groups_by_name
+    groups = []
     if vpc_id:
         # In the EC2 API, filters can only express OR,
         # so we have to implement AND by intersecting results for each filter.
-        groups_by_vpc = ec2.get_all_security_groups(filters={'vpc-id': vpc_id})
-        groups = list(set(groups_by_name) & set(groups_by_vpc))
+        groups_in_vpc = ec2.get_all_security_groups(filters={'vpc-id': vpc_id})
+        groups = [g for g in groups_in_vpc if g.name == cluster_name]
+    else:
+        groups_with_name = ec2.get_all_security_groups(filters={'group-name': cluster_name})
+        groups = groups_with_name
     if len(groups) == 0: # no groups found
         raise ValueError("No security groups found with name '%s'" % cluster_name)
     elif len(groups) > 1: # multiple groups found
@@ -368,6 +370,19 @@ def default_ami_id_from_region(ctx, param, value):
     return value if value is not None else DEFAULT_AMI_IDS[ctx.params['region']]
 
 
+def validate_subnet_id(ctx, param, value):
+    if value is not None:
+        if ctx.params.get('zone') is not None:
+            raise click.BadParameter("Cannot specify --zone if --subnet-id is specified")
+        vpc_conn = boto.vpc.connect_to_region(ctx.params['region'], profile_name=ctx.params.get('profile'))
+        try:
+            subnet = vpc_conn.get_all_subnets(subnet_ids=[value])[0]
+            ctx.params['vpc_id'] = subnet.vpc_id
+        except:
+            raise click.BadParameter("Invalid subnet ID '%s' for region '%s'" % (value, ctx.params['region']))
+        return value
+
+
 @click.group(context_settings=CONTEXT_SETTINGS)
 @click.version_option(version=VERSION)
 def run():
@@ -377,9 +392,9 @@ def run():
 @run.command('create')
 @click.argument('cluster_name')
 @click.option('-v', '--verbose', count=True)
-@click.option('--profile', default=None,
+@click.option('--profile', default=None, is_eager=True,
     help="Boto profile used to launch your cluster")
-@click.option('--region', show_default=True, default=DEFAULTS['region'],
+@click.option('--region', show_default=True, default=DEFAULTS['region'], is_eager=True,
     help="AWS region to launch your cluster in")
 @click.option('--zone', show_default=True, default=None,
     help="AWS availability zone to launch your cluster in")
@@ -393,10 +408,8 @@ def run():
     help="Number of EC2 instances in your cluster")
 @click.option('--ami-id', callback=default_ami_id_from_region,
     help="ID of the AMI (Amazon Machine Image) used for your EC2 instances")
-@click.option('--vpc-id', default=None,
-    help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
-@click.option('--subnet-id', default=None,
-    help="ID of the VPC subnet used for your EC2 instances")
+@click.option('--subnet-id', default=None, callback=validate_subnet_id,
+    help="ID of the VPC subnet in which to launch your EC2 instances")
 @click.option('--role', help="Name of an IAM role used to launch your EC2 instances")
 @click.option('--spot-price', help="Price in dollars of the maximum bid for an EC2 spot instance request")
 @click.option('--data-volume-size-gb', show_default=True, default=DEFAULTS['data_volume_size_gb'],
@@ -416,13 +429,14 @@ def create_cluster(cluster_name, **kwargs):
             click.echo("%s: %s" % (k, v))
     ec2_ini_tmpfile = NamedTemporaryFile(delete=False)
     os.environ['EC2_INI_PATH'] = ec2_ini_tmpfile.name
+    vpc_id = kwargs.get('vpc_id')
 
     # for displaying example commands
     options_str = "--region %s" % kwargs['region']
     if kwargs['profile']:
         options_str += " --profile %s" % kwargs['profile']
-    if kwargs['vpc_id']:
-        options_str += " --vpc-id %s" % kwargs['vpc_id']
+    if vpc_id:
+        options_str += " --vpc-id %s" % vpc_id
 
     # abort if credentials are not available
     try:
@@ -437,7 +451,7 @@ http://boto3.readthedocs.io/en/latest/guide/configuration.html
         sys.exit(1)
 
     # abort if vpc_id is not supplied and no default VPC exists
-    if not kwargs['vpc_id']:
+    if not vpc_id:
         vpc_conn = boto.vpc.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
         default_vpcs = vpc_conn.get_all_vpcs(filters={'isDefault': "true"})
         if not default_vpcs:
@@ -449,7 +463,7 @@ Please ask your administrator to create a default VPC or specify a VPC using the
 
     # abort if cluster already exists
     try:
-        get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+        get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
     except:
         pass
     else:
@@ -468,7 +482,7 @@ first.
         signal.signal(signal.SIGINT, signal.SIG_DFL)
         click.echo("User interrupted deployment, destroying cluster...")
         try:
-            terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+            terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
         except:
             pass # best-effort
         sys.exit(1)
@@ -492,12 +506,11 @@ first.
         callback=CallbackModule(failed_hosts))
     local_runner = Runner(**playbook_args)
     stats = local_runner.run()
-    print stats
     if failed_hosts:
         # If the local playbook fails, the only failed host must be localhost.
         click.echo("Failed to initialize EC2 instances, destroying cluster...")
         try:
-            terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+            terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
         except:
             pass # best-effort
         sys.exit(1)
@@ -511,7 +524,6 @@ first.
         playbook_args.update(hostnames=INVENTORY_SCRIPT_PATH, playbook="remote.yml", callback=CallbackModule(retry_hosts), subset_pattern=retry_hosts_pattern)
         remote_runner = Runner(**playbook_args)
         stats = remote_runner.run()
-        print stats
         if retry_hosts:
             if retries < MAX_RETRIES:
                 retries += 1
@@ -519,14 +531,18 @@ first.
                 click.echo("Retrying playbook run on hosts %s (%d of %d)" % (retry_hosts_pattern, retries, MAX_RETRIES))
             else:
                 click.echo("Maximum retries (%d) exceeded, destroying cluster..." % MAX_RETRIES)
-                terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+                terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
                 sys.exit(1)
         else:
             break
 
-    coordinator_public_hostname = get_coordinator_public_hostname(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+    coordinator_public_hostname = None
+    try:
+        coordinator_public_hostname = get_coordinator_public_hostname(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+    except:
+        pass
     if not coordinator_public_hostname:
-        click.echo("Couldn't resolve coordinator public DNS, exiting")
+        click.echo("Couldn't resolve coordinator public DNS, exiting (not destroying cluster)")
         sys.exit(1)
 
     click.echo("""
@@ -672,10 +688,11 @@ def list_cluster(cluster_name, **kwargs):
         myria_groups = ec2.get_all_security_groups(filters={'tag:app': "myria"})
         groups = myria_groups
         if kwargs['vpc_id']:
-            groups_by_vpc = ec2.get_all_security_groups(filters={'vpc-id': kwargs['vpc_id']})
+            groups_in_vpc = ec2.get_all_security_groups(filters={'vpc-id': kwargs['vpc_id']})
+            groups_in_vpc_ids = [g.id for g in groups_in_vpc]
             # In the EC2 API, filters can only express OR,
             # so we have to implement AND by intersecting results for each filter.
-            groups = list(set(myria_groups) & set(groups_by_vpc))
+            groups = [g for g in myria_groups if g.id in groups_in_vpc_ids]
         format_str = "{: <20} {: <5} {: <50}"
         print(format_str.format('CLUSTER', 'NODES', 'COORDINATOR'))
         print(format_str.format('-------', '-----', '-----------'))
