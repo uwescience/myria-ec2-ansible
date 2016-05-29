@@ -681,7 +681,8 @@ def list_cluster(cluster_name, **kwargs):
         format_str = "{: <9} {: <50}"
         print(format_str.format('WORKER_ID', 'HOST'))
         print(format_str.format('---------', '----'))
-        for instance in group.instances():
+        instances = sorted(group.instances(), key=lambda i: int(i.tags.get('worker-id')))
+        for instance in instances:
             print(format_str.format(instance.tags.get('worker-id'), instance.public_dns_name))
     else:
         ec2 = connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
