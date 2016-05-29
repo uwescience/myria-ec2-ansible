@@ -19,6 +19,8 @@
 
 - name: Clone Myria python repository
   git: repo="{{myria_python_repository_url}}" dest="{{myria_python_path}}" version="{{myria_python_branch}}"
+  become: yes
+  become_user: "{{myria_user}}"
 
 - name: Install myria-python dependencies
   pip: name={{ item }}

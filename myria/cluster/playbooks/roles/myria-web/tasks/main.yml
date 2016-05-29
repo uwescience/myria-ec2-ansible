@@ -21,6 +21,8 @@
   shell: "git checkout {{raco_branch}}"
   args:
     chdir: "{{myria_web_path}}/submodules/raco"
+  become: yes
+  become_user: "{{myria_user}}"
   notify: restart myria-web
 
 - name: Setup raco

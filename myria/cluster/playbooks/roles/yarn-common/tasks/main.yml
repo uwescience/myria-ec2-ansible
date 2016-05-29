@@ -7,11 +7,9 @@
 
 - name: Download Hadoop
   get_url: url='{{ hadoop_binaries_url }}' dest='{{ hadoop_download_path }}' mode=0755 validate_certs=no timeout=300
-  sudo: yes
 
 - name: Unarchive Hadoop in install folder
   unarchive: creates="{{ hadoop_install_path }}" copy=no src="{{ hadoop_download_path }}" dest="{{ install_base_path }}" owner={{ hadoop_user }} group={{ hadoop_group }}
-  sudo: yes
 
 - name: Create directories
   file: path={{ item.path }} state=directory mode={{ item.mode }}
@@ -56,4 +54,3 @@
 
 - name: Provision Hadoop 
   shell: "{{ soft_link_base_path }}/hadoop/pbin/provision-hadoop.sh"
-  sudo: yes
