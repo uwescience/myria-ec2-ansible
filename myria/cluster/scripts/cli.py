@@ -151,7 +151,7 @@ class Runner(object):
             if t['unreachable'] > 0 or t['failures'] > 0:
                 run_success = False
 
-        return stats
+        return run_success
 
 
 class CallbackModule(CallbackBase):
@@ -163,9 +163,14 @@ class CallbackModule(CallbackBase):
     CALLBACK_TYPE = 'stored'
     CALLBACK_NAME = 'myria'
 
-    def __init__(self, retry_hosts):
+    def __init__(self, verbosity, retry_hosts):
         super(CallbackModule, self).__init__()
+        self.verbosity = verbosity
         self.retry_hosts = retry_hosts
+
+    def echo(self, msg):
+        if self.verbosity > 0:
+            click.echo(msg)
 
     def v2_runner_on_failed(self, result, ignore_errors=False):
         delegated_vars = result._result.get('_ansible_delegated_vars', None)
@@ -181,7 +186,7 @@ class CallbackModule(CallbackBase):
             # error = result._result['exception'].strip().split('\n')[-1]
             # print(error)
             msg = "An exception occurred during task execution. The full traceback is:\n" + result._result['exception']
-            print(msg)
+            self.echo(msg)
 
             # Remove the exception from the result so it's not shown every time
             del result._result['exception']
@@ -191,9 +196,9 @@ class CallbackModule(CallbackBase):
             self._process_items(result)  # item_on_failed, item_on_skipped, item_on_ok
         else:
             if delegated_vars:
-                print("fatal: [%s -> %s]: FAILED! => %s" % (result._host.get_name(), delegated_vars['ansible_host'], self._dump_results(result._result)))
+                self.echo("fatal: [%s -> %s]: FAILED! => %s" % (result._host.get_name(), delegated_vars['ansible_host'], self._dump_results(result._result)))
             else:
-                print("fatal: [%s]: FAILED! => %s" % (result._host.get_name(), self._dump_results(result._result)))
+                self.echo("fatal: [%s]: FAILED! => %s" % (result._host.get_name(), self._dump_results(result._result)))
 
     def v2_runner_on_ok(self, result):
         self._clean_results(result._result, result._task.action)
@@ -214,14 +219,14 @@ class CallbackModule(CallbackBase):
         if result._task.loop and 'results' in result._result:
             self._process_items(result)  # item_on_failed, item_on_skipped, item_on_ok
         else:
-            print(msg)
+            self.echo(msg)
 
     def v2_runner_on_skipped(self, result):
         if result._task.loop and 'results' in result._result:
             self._process_items(result)  # item_on_failed, item_on_skipped, item_on_ok
         else:
             msg = "skipping: [%s]" % result._host.get_name()
-            print(msg)
+            self.echo(msg)
 
     def v2_runner_on_unreachable(self, result):
         # Add the failed host to set of hosts to retry
@@ -229,15 +234,15 @@ class CallbackModule(CallbackBase):
 
         delegated_vars = result._result.get('_ansible_delegated_vars', None)
         if delegated_vars:
-            print("fatal: [%s -> %s]: UNREACHABLE! => %s" % (result._host.get_name(), delegated_vars['ansible_host'], self._dump_results(result._result)))
+            self.echo("fatal: [%s -> %s]: UNREACHABLE! => %s" % (result._host.get_name(), delegated_vars['ansible_host'], self._dump_results(result._result)))
         else:
-            print("fatal: [%s]: UNREACHABLE! => %s" % (result._host.get_name(), self._dump_results(result._result)))
+            self.echo("fatal: [%s]: UNREACHABLE! => %s" % (result._host.get_name(), self._dump_results(result._result)))
 
     def v2_runner_on_no_hosts(self, task):
-        print("skipping: no hosts matched")
+        self.echo("skipping: no hosts matched")
 
     def v2_playbook_on_task_start(self, task, is_conditional):
-        print("TASK [%s]" % task.get_name().strip())
+        self.echo("TASK [%s]" % task.get_name().strip())
 
     def v2_playbook_on_play_start(self, play):
         name = play.get_name().strip()
@@ -246,7 +251,7 @@ class CallbackModule(CallbackBase):
         else:
             msg = "PLAY [%s]" % name
 
-        print(msg)
+        self.echo(msg)
 
     def v2_playbook_item_on_ok(self, result):
         delegated_vars = result._result.get('_ansible_delegated_vars', None)
@@ -265,7 +270,7 @@ class CallbackModule(CallbackBase):
 
         msg += " => (item=%s)" % (result._result['item'])
 
-        print(msg)
+        self.echo(msg)
 
     def v2_playbook_item_on_failed(self, result):
         # Add the failed host to set of hosts to retry
@@ -274,18 +279,18 @@ class CallbackModule(CallbackBase):
         delegated_vars = result._result.get('_ansible_delegated_vars', None)
         if 'exception' in result._result:
             msg = "An exception occurred during task execution. The full traceback is:\n" + result._result['exception']
-            print(msg)
+            self.echo(msg)
             # Remove the exception from the result so it's not shown every time
             del result._result['exception']
 
         if delegated_vars:
-            print("failed: [%s -> %s] => (item=%s) => %s" % (result._host.get_name(), delegated_vars['ansible_host'], result._result['item'], self._dump_results(result._result)))
+            self.echo("failed: [%s -> %s] => (item=%s) => %s" % (result._host.get_name(), delegated_vars['ansible_host'], result._result['item'], self._dump_results(result._result)))
         else:
-            print("failed: [%s] => (item=%s) => %s" % (result._host.get_name(), result._result['item'], self._dump_results(result._result)))
+            self.echo("failed: [%s] => (item=%s) => %s" % (result._host.get_name(), result._result['item'], self._dump_results(result._result)))
 
     def v2_playbook_item_on_skipped(self, result):
         msg = "skipping: [%s] => (item=%s) " % (result._host.get_name(), result._result['item'])
-        print(msg)
+        self.echo(msg)
 
     def v2_playbook_on_stats(self, stats):
         hosts = sorted(stats.processed.keys())
@@ -301,7 +306,7 @@ class CallbackModule(CallbackBase):
                 "failed: %s" % (t['failures']),
             )
 
-            print(msg)
+            self.echo(msg)
 
 
 def get_security_group_for_cluster(cluster_name, region, profile=None, vpc_id=None):
@@ -503,10 +508,10 @@ first.
         private_key_file=kwargs['private_key_file'],
         run_data=extra_vars,
         verbosity=kwargs['verbose'],
-        callback=CallbackModule(failed_hosts))
+        callback=CallbackModule(kwargs['verbose'], failed_hosts))
     local_runner = Runner(**playbook_args)
-    stats = local_runner.run()
-    if failed_hosts:
+    if not local_runner.run():
+        assert failed_hosts
         # If the local playbook fails, the only failed host must be localhost.
         click.echo("Failed to initialize EC2 instances, destroying cluster...")
         try:
@@ -521,10 +526,10 @@ first.
     # TODO: exponential backoff for unreachable hosts?
     while True:
         retry_hosts = set()
-        playbook_args.update(hostnames=INVENTORY_SCRIPT_PATH, playbook="remote.yml", callback=CallbackModule(retry_hosts), subset_pattern=retry_hosts_pattern)
+        playbook_args.update(hostnames=INVENTORY_SCRIPT_PATH, playbook="remote.yml", callback=CallbackModule(kwargs['verbose'], retry_hosts), subset_pattern=retry_hosts_pattern)
         remote_runner = Runner(**playbook_args)
-        stats = remote_runner.run()
-        if retry_hosts:
+        if not remote_runner.run():
+            assert retry_hosts
             if retries < MAX_RETRIES:
                 retries += 1
                 retry_hosts_pattern = ",".join(retry_hosts)
