@@ -561,7 +561,7 @@ Destroy this cluster:
 {script_name} destroy {cluster_name} {options}
 
 Log into the coordinator node:
-ssh -i {private_key_file} {myria_user}@{coordinator_public_hostname}
+ssh -i {private_key_file} {remote_user}@{coordinator_public_hostname}
 
 myria-web interface:
 http://{coordinator_public_hostname}:{myria_web_port}
@@ -577,7 +577,7 @@ http://{coordinator_public_hostname}:{jupyter_web_port}
 """.format(coordinator_public_hostname=coordinator_public_hostname, myria_web_port=ANSIBLE_GLOBAL_VARS['myria_web_port'],
            myria_rest_port=ANSIBLE_GLOBAL_VARS['myria_rest_port'], ganglia_web_port=ANSIBLE_GLOBAL_VARS['ganglia_web_port'],
            jupyter_web_port=ANSIBLE_GLOBAL_VARS['jupyter_web_port'], private_key_file=kwargs['private_key_file'],
-           myria_user=ANSIBLE_GLOBAL_VARS['myria_user'], script_name=SCRIPT_NAME, cluster_name=cluster_name,
+           remote_user=ANSIBLE_GLOBAL_VARS['remote_user'], script_name=SCRIPT_NAME, cluster_name=cluster_name,
            region=kwargs['region'], options=options_str))
 
 

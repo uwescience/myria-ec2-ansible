@@ -12,10 +12,10 @@
   copy: remote_src=True src={{ jupyter_config_output_path }} dest={{ jupyter_config_file }} mode=0644
 
 - name: Create notebook directory
-  file: path={{ jupyter_notebooks_dir }} state=directory mode=0755 recurse=yes
+  file: path={{ jupyter_notebooks_dir }} state=directory owner={{myria_user}} group={{myria_group}} mode=0775 recurse=yes
 
 - name: Copy sample notebook to notebook directory
-  get_url: url='{{ jupyter_sample_notebook_url }}' dest='{{ jupyter_notebooks_dir }}/myria_examples.ipynb' mode=0755 validate_certs=no timeout=300
+  get_url: url='{{ jupyter_sample_notebook_url }}' dest='{{ jupyter_notebooks_dir }}/myria_examples.ipynb' mode=0775 validate_certs=no timeout=300
 
 - name: Listen on all interfaces
   lineinfile: dest={{ jupyter_config_file }} regexp="^#?\s*c.NotebookApp.ip" line="c.NotebookApp.ip = '*'" backrefs=yes state=present

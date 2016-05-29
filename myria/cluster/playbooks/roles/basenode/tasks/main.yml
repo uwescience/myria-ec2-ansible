@@ -37,3 +37,9 @@
     - libxml2-dev
     - libxslt1-dev
     - python-dev
+
+- name: Create group for all Myria-related services
+  group: name={{ myria_group }} state=present
+
+- name: Create user for all Myria-related services
+  user: name={{ myria_user }} group={{ myria_group }}

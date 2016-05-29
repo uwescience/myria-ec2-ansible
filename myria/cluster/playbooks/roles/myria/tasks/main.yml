@@ -7,20 +7,15 @@
   with_items:
     - git
 
-- name: Create Myria group
-  group: name=myria state=present
-
-- name: Create worker directory
-  file: path={{myria_path}} state=directory owner={{myria_user}} group=myria mode=0775
+- name: Create Myria source directory
+  file: path={{myria_path}} state=directory owner={{myria_user}} group={{myria_group}} mode=0775
 
 - name: Clone Myria repository
-  sudo: no
   git: repo="{{myria_repository_url}}" dest="{{myria_path}}" version="{{myria_branch}}"
   notify: restart myria
 
 - name: Compile Myria
   shell: "./gradlew shadowJar"
-  sudo: no
   args:
     chdir: "{{myria_path}}"
     creates: "{{myria_path}}/build/libs"
@@ -37,7 +32,6 @@
                                                     --container-vcores-number {{container_vcores}} \
                                                     --persist-uri hdfs://{{hostvars[groups['tag_cluster_role_coordinator'][0]]['ansible_ec2_local_hostname']}}:{{namenode_port}}
                 > {{myria_path}}/myriadeploy/deployment.cfg"
-  sudo: no
   args:
     chdir: "{{myria_path}}/myriadeploy"
     creates: "{{myria_path}}/myriadeploy/deployment.cfg"

@@ -8,6 +8,7 @@ data_vol_fs_type: ext4
 data_vol_mount_dir: /mnt
 install_base_path: /usr/local
 soft_link_base_path: /opt
+remote_user: ubuntu
 
 # --------------------------------------
 # ZK VARIABLES
@@ -59,7 +60,8 @@ yarn_log_level: WARN
 #   Myria Variables
 #----------------------------------
 
-myria_user: ubuntu
+myria_user: myria
+myria_group: myria
 myria_version: 0.1
 myria_rest_port: 8753
 myria_web_port: 8080

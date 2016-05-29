@@ -8,18 +8,17 @@
   with_items:
   - git
   - python-setuptools
+  - python-pip
   - build-essential
   - libffi-dev
   - libssl-dev
   - python-lxml
 
-- name: Clone Myria python repository
-  sudo: no
-  git: repo="{{myria_python_repository_url}}" dest="{{myria_python}}"
+- name: Create worker directory
+  file: path={{myria_python_path}} state=directory owner={{myria_user}} group={{myria_group}} mode=0775
 
-- name: Install pip
-  shell: "easy_install pip"
-  sudo: yes 
+- name: Clone Myria python repository
+  git: repo="{{myria_python_repository_url}}" dest="{{myria_python_path}}" version="{{myria_python_branch}}"
 
 - name: Install myria-python dependencies
   pip: name={{ item }}
@@ -29,6 +28,5 @@
 
 - name: Setup myria-python
   shell: "python setup.py install"
-  sudo: yes
   args:
-    chdir: "{{myria_python}}"
+    chdir: "{{myria_python_path}}"

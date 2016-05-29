@@ -9,23 +9,22 @@
     - git
 
 - name: Create repo directory
-  file: path={{myria_web_path}} state=directory owner={{myria_user}} group=myria mode=0775
+  file: path={{myria_web_path}} state=directory owner={{myria_user}} group={{myria_group}} mode=0775
 
 - name: Clone myria-web repository
-  sudo: no
   git: repo="{{myria_web_repository_url}}" dest="{{myria_web_path}}" version="{{myria_web_branch}}" recursive=yes force=yes
+  become: yes
+  become_user: "{{myria_user}}"
   notify: restart myria-web
 
 - name: Change raco branch
   shell: "git checkout {{raco_branch}}"
-  sudo: no
   args:
     chdir: "{{myria_web_path}}/submodules/raco"
   notify: restart myria-web
 
 - name: Setup raco
   shell: "python setup.py install"
-  sudo: yes
   args:
     chdir: "{{myria_web_path}}/submodules/raco"
   notify: restart myria-web
