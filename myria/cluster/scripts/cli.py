@@ -553,7 +553,7 @@ first.
     click.echo("""
 Your new Myria cluster '{cluster_name}' has been launched on Amazon EC2 in the '{region}' region.
 
-View Myria worker IDs and public hostnames of all nodes in this cluster:
+View the Myria worker IDs and public hostnames of all nodes in this cluster (the coordinator has worker ID 0):
 {script_name} list {cluster_name} {options}
 
 Stop this cluster:
@@ -668,7 +668,7 @@ def start_cluster(cluster_name, **kwargs):
         options_str += " --vpc-id %s" % kwargs['vpc_id']
     print("""
 Your Myria cluster '{cluster_name}' in the AWS '{region}' region has been successfully restarted.
-The public hostnames of all nodes in this cluster have changed. You can view the new values by running `{script_name} list {cluster_name} {options}`.
+The public hostnames of all nodes in this cluster have changed. You can view the new values by running `{script_name} list {cluster_name} {options}` (note that the new coordinator has worker ID 0).
 """.format(script_name=SCRIPT_NAME, cluster_name=cluster_name, region=kwargs['region'], options=options_str))
 
 
