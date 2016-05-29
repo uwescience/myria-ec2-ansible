@@ -554,7 +554,7 @@ View Myria worker IDs and public hostnames of all nodes in this cluster:
 Stop this cluster:
 {script_name} stop {cluster_name} {options}
 
-Restart this cluster:
+Start this cluster after stopping it:
 {script_name} start {cluster_name} {options}
 
 Destroy this cluster:
