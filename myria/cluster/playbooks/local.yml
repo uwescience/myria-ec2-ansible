@@ -139,9 +139,9 @@
       resource: "{{ item.1.id }}"
       state: present
       tags:
-        Name: "{{CLUSTER_NAME}}-{{USER}}-worker-{{item.0+1}}"
+        Name: "{{CLUSTER_NAME}}-{{USER}}-worker-{{(item.0 * WORKERS_PER_NODE) + 1}}-{{(item.0+1) * WORKERS_PER_NODE}}"
         cluster-role: worker
-        worker-id: "{{item.0+1}}"
+        worker-id: "{{ range((item.0 * WORKERS_PER_NODE) + 1, ((item.0+1) * WORKERS_PER_NODE) + 1) | join(',') }}"
     with_indexed_items: "{{ ec2.instances[1:] | sort(attribute='private_dns_name') }}"
 
   - name: Wait for SSH to come up on all nodes

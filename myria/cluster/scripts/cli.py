@@ -53,7 +53,8 @@ DEFAULTS = dict(
     worker_mem_gb=4.0,
     worker_vcores=1,
     node_mem_gb=6.0,
-    node_vcores=2
+    node_vcores=2,
+    workers_per_node=1
 )
 
 DEFAULT_AMI_IDS = {
@@ -427,6 +428,8 @@ def run():
     help="Physical memory (in GB) on each EC2 instance available for Myria processes")
 @click.option('--node-vcores', show_default=True, default=DEFAULTS['node_vcores'],
     help="Number of virtual CPUs on each EC2 instance available for Myria processes")
+@click.option('--workers-per-node', show_default=True, default=DEFAULTS['workers_per_node'],
+    help="Number of Myria workers per cluster node")
 def create_cluster(cluster_name, **kwargs):
     if kwargs['verbose'] > 0:
         click.echo("cluster_name: %s" % cluster_name)
@@ -684,9 +687,9 @@ def list_cluster(cluster_name, **kwargs):
     if cluster_name is not None:
         group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
         format_str = "{: <9} {: <50}"
-        print(format_str.format('WORKER_ID', 'HOST'))
+        print(format_str.format('WORKER_IDS', 'HOST'))
         print(format_str.format('---------', '----'))
-        instances = sorted(group.instances(), key=lambda i: int(i.tags.get('worker-id')))
+        instances = sorted(group.instances(), key=lambda i: int(i.tags.get('worker-id').split(',')[0]))
         for instance in instances:
             print(format_str.format(instance.tags.get('worker-id'), instance.public_dns_name))
     else:

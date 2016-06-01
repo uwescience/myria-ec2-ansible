@@ -23,13 +23,14 @@
 
 - name: Create deployment configuration file
   shell: "./create_deployment.py {{myria_path}} {{ hostvars[groups['tag_cluster_role_coordinator'][0]]['ansible_ec2_local_hostname'] }} \
-                                                    {% for host in groups['tag_cluster_role_worker'] %} {{ hostvars[host]['ansible_ec2_local_hostname'] }} {% endfor %} \
+                                                    {% for host in groups['tag_cluster_role_worker'] %} {% for i in range(WORKERS_PER_NODE) %} {{ hostvars[host]['ansible_ec2_local_hostname'] }} {% endfor %} {% endfor %} \
                                                     --rest-port {{myria_rest_port}} \
                                                     --coordinator-port {{coordinator_port}} \
                                                     --worker-base-port {{worker_base_port}} \
                                                     --database-password {{database_password}} \
                                                     --container-memory-size-gb {{container_mem_gb}} \
                                                     --container-vcores-number {{container_vcores}} \
+                                                    --worker-databases {% for i in range(WORKERS_PER_NODE * groups['tag_cluster_role_worker']|length) %} myria_{{i+1}} {% endfor %} \
                                                     --persist-uri hdfs://{{hostvars[groups['tag_cluster_role_coordinator'][0]]['ansible_ec2_local_hostname']}}:{{namenode_port}}
                 > {{myria_path}}/myriadeploy/deployment.cfg"
   args:

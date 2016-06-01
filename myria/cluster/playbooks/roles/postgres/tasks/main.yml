@@ -70,13 +70,15 @@
   notify: restart postgresql
 
 - name: Create database instance
-  postgresql_db: name={{database_name}}
+  postgresql_db: name=myria_{{item}}
   become: yes
   become_user: postgres
+  with_items: "{{ ec2_tag_worker_id.split(',') }}"
   notify: restart postgresql
 
 - name: Create database user
-  postgresql_user: db={{database_name}} name={{database_username}} password={{database_password}} priv=ALL
+  postgresql_user: db=myria_{{item}} name={{database_username}} password={{database_password}} priv=ALL
   become: yes
   become_user: postgres
+  with_items: "{{ ec2_tag_worker_id.split(',') }}"
   notify: restart postgresql
