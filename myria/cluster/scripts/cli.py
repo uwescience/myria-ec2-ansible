@@ -12,6 +12,7 @@ import yaml
 import boto
 from boto.ec2 import connect_to_region
 import boto.vpc
+import boto.iam
 from boto.exception import EC2ResponseError
 
 # Ansible configuration variables to set before importing Ansible modules
@@ -444,10 +445,6 @@ def run():
 @click.option('--cluster-log-level', show_default=True, callback=validate_log_level, default=DEFAULTS['cluster_log_level'],
     help="One of %s, from lowest to highest level of detail" % ', '.join(LOG_LEVELS))
 def create_cluster(cluster_name, **kwargs):
-    if kwargs['verbose'] > 0:
-        click.echo("cluster_name: %s" % cluster_name)
-        for k, v in kwargs.iteritems():
-            click.echo("%s: %s" % (k, v))
     ec2_ini_tmpfile = NamedTemporaryFile(delete=False)
     os.environ['EC2_INI_PATH'] = ec2_ini_tmpfile.name
     vpc_id = kwargs.get('vpc_id')
@@ -495,6 +492,20 @@ first.
 """.format(script_name=SCRIPT_NAME, cluster_name=cluster_name, region=kwargs['region'], options=options_str))
         sys.exit(1)
 
+    # extract IAM user name for resource tagging
+    iam_conn = boto.iam.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
+    iam_user = None
+    try:
+        # TODO: once we move to boto3, we can get better info on callling principal from boto3.sts.get_caller_identity()
+        iam_user = iam_conn.get_user()['get_user_response']['get_user_result']['user']['user_name']
+    except:
+        pass
+    if not iam_user:
+        click.echo("""
+Unable to find IAM user with credentials provided. Please configure IAM user credentials before running `{script_name}`.
+""".format(script_name=SCRIPT_NAME))
+        sys.exit(1)
+
     # install keyboard interrupt handler to destroy partially-deployed cluster
     # TODO: signal handlers are inherited by each child process spawned by Ansible,
     # so messages are (harmlessly) duplicated for each process.
@@ -515,6 +526,11 @@ first.
     extra_vars.update(USER=USER)
     extra_vars.update(ansible_python_interpreter='/usr/bin/env python')
     extra_vars.update(EC2_INI_PATH=ec2_ini_tmpfile.name)
+    extra_vars.update(IAM_USER=iam_user)
+
+    if kwargs['verbose'] > 0:
+        for k, v in extra_vars.iteritems():
+            click.echo("%s: %s" % (k, v))
 
     # run local playbook to launch EC2 instances
     failed_hosts = set()
