@@ -44,6 +44,9 @@ MAX_RETRIES = 5
 USER = os.getenv('USER')
 HOME = os.getenv('HOME')
 
+# valid log4j log levels (https://logging.apache.org/log4j/1.2/apidocs/org/apache/log4j/Level.html)
+LOG_LEVELS = ['OFF', 'FATAL', 'ERROR', 'WARN', 'DEBUG', 'TRACE', 'ALL']
+
 DEFAULTS = dict(
     key_pair="%s-myria" % USER,
     region='us-west-2',
@@ -54,7 +57,8 @@ DEFAULTS = dict(
     worker_vcores=1,
     node_mem_gb=6.0,
     node_vcores=2,
-    workers_per_node=1
+    workers_per_node=1,
+    cluster_log_level='WARN'
 )
 
 DEFAULT_AMI_IDS = {
@@ -389,6 +393,13 @@ def validate_subnet_id(ctx, param, value):
         return value
 
 
+def validate_log_level(ctx, param, value):
+    if value is not None:
+        if value not in LOG_LEVELS:
+            raise click.BadParameter("valid log levels are %s" % ', '.join(LOG_LEVELS))
+        return value
+
+
 @click.group(context_settings=CONTEXT_SETTINGS)
 @click.version_option(version=VERSION)
 def run():
@@ -430,6 +441,8 @@ def run():
     help="Number of virtual CPUs on each EC2 instance available for Myria processes")
 @click.option('--workers-per-node', show_default=True, default=DEFAULTS['workers_per_node'],
     help="Number of Myria workers per cluster node")
+@click.option('--cluster-log-level', show_default=True, callback=validate_log_level, default=DEFAULTS['cluster_log_level'],
+    help="One of %s, from lowest to highest level of detail" % ', '.join(LOG_LEVELS))
 def create_cluster(cluster_name, **kwargs):
     if kwargs['verbose'] > 0:
         click.echo("cluster_name: %s" % cluster_name)
