@@ -112,6 +112,7 @@
       region: "{{REGION}}"
       zone: "{{ZONE | default(omit)}}"
       instance_tags:
+        app: "myria"
         cluster-name: "{{CLUSTER_NAME | default(omit)}}"
         spot-price: "{{SPOT_PRICE | default(omit)}}"
         "user:Name": "{{IAM_USER}}"
@@ -121,6 +122,27 @@
         volume_type: "{{ data_vol_storage_type }}"
         delete_on_termination: true
     register: ec2
+
+  - name: List volumes
+    ec2_vol:
+      instance: "{{ item.id }}"
+      region: "{{REGION}}"
+      state: list
+    with_items: "{{ec2.tagged_instances}}"
+    register: ec2_vol
+
+  - name: Tag volumes
+    ec2_tag:
+      region: "{{REGION}}"
+      resource: "{{ item.id }}"
+      state: present
+      tags:
+        app: "myria"
+        cluster-name: "{{CLUSTER_NAME | default(omit)}}"
+        "user:Name": "{{IAM_USER}}"
+    with_subelements:
+      - "{{ec2_vol.results}}"
+      - volumes
 
   - name: Tag coordinator
     ec2_tag:
