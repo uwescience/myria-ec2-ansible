@@ -12,8 +12,8 @@
   - name: Create EC2 keypair if absent
     ec2_key:
       name: "{{KEY_PAIR}}"
-      region: "{{REGION}}"
       profile: "{{PROFILE | default(omit)}}"
+      region: "{{REGION}}"
     register: key_pair
   - name: Check for existing private key file
     stat: path="{{PRIVATE_KEY_FILE}}"
@@ -32,8 +32,8 @@
     ec2_group:
       name: "{{CLUSTER_NAME}}"
       description: "Myria security group"
-      region: "{{REGION}}"
       profile: "{{PROFILE | default(omit)}}"
+      region: "{{REGION}}"
       vpc_id: "{{VPC_ID | default(omit)}}"
       rules:
       - proto: all
@@ -96,6 +96,8 @@
   - name: Launch instances
     ec2:
       profile: "{{PROFILE | default(omit)}}"
+      region: "{{REGION}}"
+      zone: "{{ZONE | default(omit)}}"
       keypair: "{{KEY_PAIR}}"
       group_id: "{{ec2_group.group_id}}"
       instance_type: "{{INSTANCE_TYPE}}"
@@ -109,8 +111,6 @@
       #spot_launch_group: "{{CLUSTER_NAME | default(omit)}}"
       wait: yes
       wait_timeout: "{{wait_timeout}}"
-      region: "{{REGION}}"
-      zone: "{{ZONE | default(omit)}}"
       instance_tags:
         app: "myria"
         cluster-name: "{{CLUSTER_NAME | default(omit)}}"
@@ -125,16 +125,18 @@
 
   - name: List volumes
     ec2_vol:
-      instance: "{{ item.id }}"
+      profile: "{{PROFILE | default(omit)}}"
       region: "{{REGION}}"
+      instance: "{{ item.id }}"
       state: list
-    with_items: "{{ec2.tagged_instances}}"
+    with_items: "{{ec2.instances}}"
     register: ec2_vol
 
   - name: Tag volumes
     ec2_tag:
+      profile: "{{PROFILE | default(omit)}}"
       region: "{{REGION}}"
-      resource: "{{ item.id }}"
+      resource: "{{ item.1.id }}"
       state: present
       tags:
         app: "myria"
