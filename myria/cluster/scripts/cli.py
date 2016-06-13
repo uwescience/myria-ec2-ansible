@@ -486,9 +486,9 @@ Please ask your administrator to create a default VPC or specify a VPC using the
         pass
     else:
         click.echo("""
-Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to create a new cluster with the same name, please run
-    {script_name} destroy {cluster_name} {options}
-first.
+Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to create a new cluster with the same name, first run
+
+{script_name} destroy {cluster_name} {options}
 """.format(script_name=SCRIPT_NAME, cluster_name=cluster_name, region=kwargs['region'], options=options_str))
         sys.exit(1)
 
