@@ -542,7 +542,16 @@ Unable to find IAM user with credentials provided. Please configure IAM user cre
         verbosity=kwargs['verbose'],
         callback=CallbackModule(kwargs['verbose'], failed_hosts))
     local_runner = Runner(**playbook_args)
-    if not local_runner.run():
+    success = False
+    try:
+        success = local_runner.run()
+    except Exception as e:
+        if kwargs['verbose'] > 0:
+            click.echo(e)
+        click.echo("Unexpected error, destroying cluster...")
+        terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+        sys.exit(1)
+    if not success:
         assert failed_hosts
         # If the local playbook fails, the only failed host must be localhost.
         click.echo("Failed to initialize EC2 instances, destroying cluster...")
@@ -560,7 +569,15 @@ Unable to find IAM user with credentials provided. Please configure IAM user cre
         retry_hosts = set()
         playbook_args.update(hostnames=INVENTORY_SCRIPT_PATH, playbook="remote.yml", callback=CallbackModule(kwargs['verbose'], retry_hosts), subset_pattern=retry_hosts_pattern)
         remote_runner = Runner(**playbook_args)
-        if not remote_runner.run():
+        try:
+            success = remote_runner.run()
+        except Exception as e:
+            if kwargs['verbose'] > 0:
+                click.echo(e)
+            click.echo("Unexpected error, destroying cluster...")
+            terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+            sys.exit(1)
+        if not success:
             assert retry_hosts
             if retries < MAX_RETRIES:
                 retries += 1
