@@ -1,10 +1,4 @@
 ---
-- name: Create a Group `"{{ hadoop_group }}"` for all our Hadoop Modules.
-  group: name={{ hadoop_group }} state=present
-
-- name: Create a User `"{{ hadoop_user }}"` for all our Hadoop Modules.
-  user: name={{ hadoop_user }} group={{ hadoop_group }} password={{ hadoop_password }}
-
 - name: Download Hadoop
   get_url: url='{{ hadoop_binaries_url }}' dest='{{ hadoop_download_path }}' mode=0755 validate_certs=no timeout=300
 

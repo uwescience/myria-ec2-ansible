@@ -36,8 +36,17 @@
     - libxslt1-dev
     - python-dev
 
+- name: Create group for all Hadoop services
+  group: name={{ hadoop_group }} state=present
+
+- name: Create user for all Hadoop services
+  user: name={{ hadoop_user }} group={{ hadoop_group }} password={{ hadoop_password }}
+
 - name: Create group for all Myria-related services
   group: name={{ myria_group }} state=present
 
 - name: Create user for all Myria-related services
   user: name={{ myria_user }} group={{ myria_group }}
+
+- name: Give remote user access to Myria files
+  user: name={{ remote_user }} groups={{ myria_group }},{{ hadoop_group }} append=yes
