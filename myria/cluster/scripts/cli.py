@@ -500,11 +500,8 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
         iam_user = iam_conn.get_user()['get_user_response']['get_user_result']['user']['user_name']
     except:
         pass
-    if not iam_user:
-        click.echo("""
-Unable to find IAM user with credentials provided. Please configure IAM user credentials before running `{script_name}`.
-""".format(script_name=SCRIPT_NAME))
-        sys.exit(1)
+    if not iam_user and kwargs['verbose'] > 0:
+        click.echo("Warning: unable to find IAM user with credentials provided. IAM user tagging will be disabled.")
 
     # install keyboard interrupt handler to destroy partially-deployed cluster
     # TODO: signal handlers are inherited by each child process spawned by Ansible,
@@ -526,7 +523,8 @@ Unable to find IAM user with credentials provided. Please configure IAM user cre
     extra_vars.update(USER=USER)
     extra_vars.update(ansible_python_interpreter='/usr/bin/env python')
     extra_vars.update(EC2_INI_PATH=ec2_ini_tmpfile.name)
-    extra_vars.update(IAM_USER=iam_user)
+    if iam_user:
+        extra_vars.update(IAM_USER=iam_user)
 
     if kwargs['verbose'] > 0:
         for k, v in extra_vars.iteritems():
@@ -552,8 +550,8 @@ Unable to find IAM user with credentials provided. Please configure IAM user cre
         terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
         sys.exit(1)
     if not success:
-        assert failed_hosts
         # If the local playbook fails, the only failed host must be localhost.
+        assert failed_hosts
         click.echo("Failed to initialize EC2 instances, destroying cluster...")
         try:
             terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)

@@ -91,7 +91,7 @@
       state: present
       tags:
         app: "myria"
-        "user:Name": "{{IAM_USER}}"
+        "user:Name": "{{IAM_USER | default(omit)}}"
 
   - name: Launch instances
     ec2:
@@ -115,7 +115,7 @@
         app: "myria"
         cluster-name: "{{CLUSTER_NAME | default(omit)}}"
         spot-price: "{{SPOT_PRICE | default(omit)}}"
-        "user:Name": "{{IAM_USER}}"
+        "user:Name": "{{IAM_USER | default(omit)}}"
       volumes:
       - device_name: "{{ data_vol_device_name }}"
         volume_size: "{{ DATA_VOLUME_SIZE_GB }}"
@@ -141,7 +141,7 @@
       tags:
         app: "myria"
         cluster-name: "{{CLUSTER_NAME | default(omit)}}"
-        "user:Name": "{{IAM_USER}}"
+        "user:Name": "{{IAM_USER | default(omit)}}"
     with_subelements:
       - "{{ec2_vol.results}}"
       - volumes
