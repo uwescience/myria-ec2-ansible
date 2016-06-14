@@ -715,7 +715,12 @@ def start_cluster(cluster_name, **kwargs):
         options_str += " --vpc-id %s" % kwargs['vpc_id']
     print("""
 Your Myria cluster '{cluster_name}' in the AWS '{region}' region has been successfully restarted.
-The public hostnames of all nodes in this cluster have changed. You can view the new values by running `{script_name} list {cluster_name} {options}` (note that the new coordinator has worker ID 0).
+The public hostnames of all nodes in this cluster have changed.
+You can view the new values by running
+
+{script_name} list {cluster_name} {options}
+
+(note that the new coordinator has worker ID 0).
 """.format(script_name=SCRIPT_NAME, cluster_name=cluster_name, region=kwargs['region'], options=options_str))
 
 
@@ -730,9 +735,9 @@ The public hostnames of all nodes in this cluster have changed. You can view the
 def list_cluster(cluster_name, **kwargs):
     if cluster_name is not None:
         group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
-        format_str = "{: <9} {: <50}"
+        format_str = "{: <10} {: <50}"
         print(format_str.format('WORKER_IDS', 'HOST'))
-        print(format_str.format('---------', '----'))
+        print(format_str.format('----------', '----'))
         instances = sorted(group.instances(), key=lambda i: int(i.tags.get('worker-id').split(',')[0]))
         for instance in instances:
             print(format_str.format(instance.tags.get('worker-id'), instance.public_dns_name))
