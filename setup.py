@@ -12,7 +12,7 @@ setup(
     zip_safe=False,
     author= 'Tobin Baker',
     author_email= 'tdbaker@cs.washington.edu',
-    url= 'https://github.com/uwescience/myria-ec2-ansible',
+    url= 'https://github.com/uwescience/myria-ec2-ansible/tarball/0.1.0',
     license= 'BSD',
     description= 'CLI to deploy the Myria parallel database on Amazon EC2',
     long_description= readme(),
@@ -20,9 +20,9 @@ setup(
         'setuptools_git >= 1.1',
     ],
     install_requires=[
+        'ansible >= 2.0.0',
         'click >= 6.6',
         'boto >= 2.40.0',
-        'ansible >= 2.0.2',
         'PyYAML >= 3.11',
     ],
     entry_points={
