@@ -63,7 +63,7 @@ DEFAULTS = dict(
 )
 
 DEFAULT_AMI_IDS = {
-    'us_east-1': "ami-fce3c696",
+    'us-east-1': "ami-fce3c696",
     'us-west-2': "ami-9abea4fb",
     'us-west-1': "ami-06116566",
     'eu-west-1': "ami-f95ef58a",
@@ -131,7 +131,7 @@ class Runner(object):
 
         self.variable_manager = VariableManager()
         self.variable_manager.extra_vars = self.run_data
-        
+
         self.inventory = Inventory(loader=self.loader, variable_manager=self.variable_manager, host_list=self.hostnames)
         self.variable_manager.set_inventory(self.inventory)
 
