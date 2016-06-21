@@ -20,6 +20,7 @@ os.environ['ANSIBLE_SSH_ARGS'] = "-o ControlMaster=auto -o ControlPersist=60s -o
 os.environ['ANSIBLE_RECORD_HOST_KEYS'] = "False"
 os.environ['ANSIBLE_HOST_KEY_CHECKING'] = "False"
 os.environ['ANSIBLE_SSH_PIPELINING'] = "True"
+os.environ['ANSIBLE_RETRY_FILES_ENABLED'] = "False"
 
 from ansible.inventory import Inventory
 from ansible.vars import VariableManager
