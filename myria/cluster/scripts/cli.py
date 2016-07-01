@@ -426,7 +426,7 @@ def run():
 @click.option('--cluster-size', show_default=True, default=DEFAULTS['cluster_size'],
     help="Number of EC2 instances in your cluster")
 @click.option('--ami-id', callback=default_ami_id_from_region,
-    help="ID of the AMI (Amazon Machine Image) used for your EC2 instances")
+    help="ID of the AMI (Amazon Machine Image) used for your EC2 instances [default: %s]" % DEFAULT_AMI_IDS[DEFAULTS['region']])
 @click.option('--subnet-id', default=None, callback=validate_subnet_id,
     help="ID of the VPC subnet in which to launch your EC2 instances")
 @click.option('--role', help="Name of an IAM role used to launch your EC2 instances")
