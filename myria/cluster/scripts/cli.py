@@ -476,7 +476,7 @@ http://boto3.readthedocs.io/en/latest/guide/configuration.html
         if not default_vpcs:
             click.echo("""
 No default VPC is configured for your AWS account in the '{region}' region.
-Please ask your administrator to create a default VPC or specify a VPC using the `--vpc-id` option.
+Please ask your administrator to create a default VPC or specify a VPC subnet using the `--subnet-id` option.
 """.format(region=kwargs['region']))
             sys.exit(1)
 
