@@ -540,10 +540,9 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
         run_data=extra_vars,
         verbosity=kwargs['verbose'],
         callback=CallbackModule(kwargs['verbose'], failed_hosts))
-    local_runner = Runner(**playbook_args)
     success = False
     try:
-        success = local_runner.run()
+        success = Runner(**playbook_args).run()
     except Exception as e:
         if kwargs['verbose'] > 0:
             click.echo(e)
@@ -567,9 +566,8 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
     while True:
         retry_hosts = set()
         playbook_args.update(hostnames=INVENTORY_SCRIPT_PATH, playbook="remote.yml", callback=CallbackModule(kwargs['verbose'], retry_hosts), subset_pattern=retry_hosts_pattern)
-        remote_runner = Runner(**playbook_args)
         try:
-            success = remote_runner.run()
+            success = Runner(**playbook_args).run()
         except Exception as e:
             if kwargs['verbose'] > 0:
                 click.echo(e)
