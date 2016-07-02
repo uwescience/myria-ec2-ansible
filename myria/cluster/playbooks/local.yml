@@ -103,6 +103,7 @@
       instance_type: "{{INSTANCE_TYPE}}"
       image: "{{AMI_ID}}"
       vpc_subnet_id: "{{SUBNET_ID | default(omit)}}"
+      assign_public_ip: "{{'yes' if SUBNET_ID is defined else omit}}"
       instance_profile_name: "{{ROLE | default(omit)}}"
       count: "{{CLUSTER_SIZE}}"
       spot_price: "{{SPOT_PRICE | default(omit)}}"
