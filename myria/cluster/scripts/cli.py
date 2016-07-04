@@ -8,6 +8,7 @@ from tempfile import NamedTemporaryFile
 from collections import namedtuple
 import click
 import yaml
+import requests
 
 import boto
 from boto.ec2 import connect_to_region
@@ -593,9 +594,6 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
             callback=CallbackModule(kwargs['verbose'], retry_hosts), subset_pattern=retry_hosts_pattern)
         if USE_PREBUILT_AMI:
             playbook_args.update(tags=['configure'])
-        if kwargs['verbose'] > 0:
-            for k, v in playbook_args.iteritems():
-                click.echo("%s: %s" % (k, v))
         try:
             success = Runner(**playbook_args).run()
         except Exception as e:
@@ -625,6 +623,32 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
     if not coordinator_public_hostname:
         click.echo("Couldn't resolve coordinator public DNS, exiting (not destroying cluster)")
         sys.exit(1)
+
+    # wait for Myria REST service to be available and all workers online
+    workers_url = "http://%(host)s:%(port)d/workers" % dict(host=coordinator_public_hostname, port=ANSIBLE_GLOBAL_VARS['myria_rest_port'])
+    while True:
+        try:
+            workers_resp = requests.get(workers_url)
+        except requests.ConnectionError:
+            if kwargs['verbose'] > 0:
+                click.echo("Myria service unavailable, waiting 60 seconds...")
+        else:
+            if workers_resp.status_code == requests.codes.ok:
+                workers = workers_resp.json()
+                workers_alive_resp = requests.get(workers_url + "/alive")
+                workers_alive = workers_alive_resp.json()
+                if len(workers_alive) == len(workers):
+                    break
+                else:
+                    if kwargs['verbose'] > 0:
+                        click.echo("Not all Myria workers online (%d/%d), waiting 60 seconds..." % (
+                            len(workers_alive), len(workers)))
+            else:
+                click.echo("Error response from Myria service (status code %d):\n%s\n\nDestroying cluster..." % (
+                    workers_resp.status_code, workers_resp.text))
+                terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+                sys.exit(1)
+        sleep(60)
 
     click.echo("""
 Your new Myria cluster '{cluster_name}' has been launched on Amazon EC2 in the '{region}' region.

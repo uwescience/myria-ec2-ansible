@@ -26,6 +26,7 @@ setup(
         'click >= 6.6',
         'boto >= 2.40.0',
         'PyYAML >= 3.11',
+        'requests >= 2.10.0',
     ],
     entry_points={
         'console_scripts': [
