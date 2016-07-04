@@ -1,5 +1,10 @@
 ---
 # ansible-playbook "$MYRIA_ANSIBLE_DIR/site.yml" --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE"
+# NB: this playbook is expected to be called with either `--tags=provision`, `--tags=configure` or `--tags=update`!
+# By (mis)design, it is impossible to filter by tags within a playbook itself
+# (tags within a role invocation actually apply the tags to every task within the role).
+# The only way to achieve the same effect within a playbook is to use variables and
+# conditionals instead of tags, and we don't want to go there (yet).
 - name: Gather EC2 facts
   hosts: ec2
   gather_facts: true

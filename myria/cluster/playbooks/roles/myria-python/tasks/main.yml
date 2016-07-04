@@ -1,6 +1,6 @@
 ---
 ##
-## tasks for installing  myria python
+## tasks for installing myria-python package
 ##
 
 - name: Installing packages
@@ -13,22 +13,33 @@
   - libffi-dev
   - libssl-dev
   - python-lxml
+  tags:
+    - provision
 
 - name: Create worker directory
   file: path={{myria_python_path}} state=directory owner={{myria_user}} group={{myria_group}} mode=0775
+  tags:
+    - provision
 
 - name: Clone Myria python repository
   git: repo="{{myria_python_repository_url}}" dest="{{myria_python_path}}" version="{{myria_python_branch}}"
   become: yes
   become_user: "{{myria_user}}"
+  tags:
+    - provision
 
 - name: Install myria-python dependencies
   pip: name={{ item }}
   with_items:
   - numpy
   - pandas
+  tags:
+    - provision
 
 - name: Setup myria-python
   shell: "python setup.py install"
   args:
     chdir: "{{myria_python_path}}"
+    creates: "{{myria_python_path}}/build"
+  tags:
+    - provision

@@ -1,7 +1,11 @@
 ---
 - name: Install yarn-slave prep tasks
   template: src=service-prep.conf.j2 dest=/etc/init/yarn-slave-prep.conf backup=yes mode=0644
+  tags:
+    - configure
 
 - name: Install yarn-slave service
   template: src=service.conf.j2 dest=/etc/init/yarn-slave.conf backup=yes mode=0644
   notify: restart yarn-slave
+  tags:
+    - configure

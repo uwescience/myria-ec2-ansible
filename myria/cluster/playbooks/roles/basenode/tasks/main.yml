@@ -1,18 +1,28 @@
 ---
 - name: Gather EC2 facts
   ec2_facts:
+  tags:
+    - configure
 
 - name: Format attached EBS data volume
   filesystem: fstype={{ data_vol_fs_type }} dev={{ data_vol_real_device_name }}
+  tags:
+    - configure
 
 - name: Mount attached EBS data volume
   mount: name={{ data_vol_mount_dir }} src={{ data_vol_real_device_name }} fstype={{ data_vol_fs_type }} opts=rw,noatime state=mounted
+  tags:
+    - configure
 
 - name: Add Java8 PPA
   apt_repository: repo='ppa:webupd8team/java'
+  tags:
+    - provision
 
 - name: Automatically select the Oracle license for Java
   debconf: name='oracle-java8-installer' question='shared/accepted-oracle-license-v1-1' value='true' vtype='select'
+  tags:
+    - provision
 
 # The Oracle download site is very flaky and there are no mirrors,
 # so we copy the Java SDK tarball to /var/cache/oracle-jdk8-installer/
@@ -20,9 +30,13 @@
 
 - name: Create oracle-java8-installer package cache directory since it doesn't exist yet
   file: path='/var/cache/oracle-jdk8-installer' state=directory mode=0755 owner='root' group='root'
+  tags:
+    - provision
 
 - name: Cache JDK8 tarball to avoid Oracle download
   get_url: url='{{ jdk8_url }}' dest='{{ jdk8_file }}' mode=0644 validate_certs=no timeout=300
+  tags:
+    - provision
 
 - name: Installing packages
   apt: name="{{item}}" state=latest update_cache=yes
@@ -35,18 +49,30 @@
     - libxml2-dev
     - libxslt1-dev
     - python-dev
+  tags:
+    - provision
 
 - name: Create group for all Hadoop services
   group: name={{ hadoop_group }} state=present
+  tags:
+    - provision
 
 - name: Create user for all Hadoop services
   user: name={{ hadoop_user }} group={{ hadoop_group }} password={{ hadoop_password }}
+  tags:
+    - provision
 
 - name: Create group for all Myria-related services
   group: name={{ myria_group }} state=present
+  tags:
+    - provision
 
 - name: Create user for all Myria-related services
   user: name={{ myria_user }} group={{ myria_group }}
+  tags:
+    - provision
 
 - name: Give remote user access to Myria files
   user: name={{ remote_user }} groups={{ myria_group }},{{ hadoop_group }} append=yes
+  tags:
+    - provision

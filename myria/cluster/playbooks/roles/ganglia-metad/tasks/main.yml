@@ -4,13 +4,17 @@
   with_items:
     - gmetad
     - rrdtool
-  tags: ganglia
+  tags:
+    - provision
 
 - name: create RRD root directory
   file: path={{ rrd_root_dir }} state=directory owner={{ ganglia_user }} group={{ ganglia_group }} mode=0755 recurse=yes
+  tags:
+    - configure
 
 - name: configure gmetad.conf
   template: src=gmetad.conf.j2 dest="{{ ganglia_conf_dir }}/gmetad.conf" owner=root group=root mode=0644
-  tags: ganglia
+  tags:
+    - configure
   notify:
     - restart gmetad

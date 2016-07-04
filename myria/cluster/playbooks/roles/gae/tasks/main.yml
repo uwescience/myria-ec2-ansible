@@ -1,8 +1,18 @@
 ---
 # This playbook contains GAE Python SDK plays that will be run on all nodes.
+- name: Check for existing GAE installation
+  stat: path="{{ gae_base_dir }}/{{ gae_dirname }}"
+  register: gae_dir
+  tags:
+    - provision
 
 - name: Download GAE Python SDK
   get_url: url='{{ gae_sdk_url }}' dest='{{ gae_sdk_download_path }}' mode=0755 validate_certs=no timeout=300
+  when: not (gae_dir.stat.exists)
+  tags:
+    - provision
 
 - name: Unarchive GAE Python SDK to install path
   unarchive: creates={{ gae_base_dir }}/{{ gae_dirname }} copy=no src={{ gae_sdk_download_path }} dest={{ gae_base_dir }} owner={{ myria_user }} mode=0755
+  tags:
+    - provision

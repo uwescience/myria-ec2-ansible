@@ -35,6 +35,7 @@ from distutils.spawn import find_executable
 import pkg_resources
 VERSION = pkg_resources.get_distribution("myria-cluster").version
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
+USE_PREBUILT_AMI = False
 
 SCRIPT_NAME =  os.path.basename(sys.argv[0])
 # this is necessary because pip loses executable permissions and ansible requires scripts to be executable
@@ -64,16 +65,17 @@ DEFAULTS = dict(
 )
 
 DEFAULT_AMI_IDS = {
-    'us-east-1': "ami-fce3c696",
-    'us-west-2': "ami-9abea4fb",
-    'us-west-1': "ami-06116566",
-    'eu-west-1': "ami-f95ef58a",
-    'eu-central-1': "ami-87564feb",
-    'ap-southeast-1': "ami-25c00c46",
-    'ap-northeast-1': "ami-a21529cc",
-    'ap-southeast-2': "ami-6c14310f",
-    'ap-northeast-2': "ami-09dc1267",
-    'sa-east-1': "ami-0fb83963"
+    'us-west-2': "ami-d75392b7",
+    'us-east-1': "ami-f9219bee",
+    'us-west-1': "ami-0799de67",
+    'eu-west-1': "ami-91c6a3e2",
+    'eu-central-1': "ami-4d52b922",
+    'ap-northeast-1': "ami-7917e418",
+    'ap-northeast-2': "ami-7f844e11",
+    'ap-southeast-1': "ami-27b76a44",
+    'ap-southeast-2': "ami-c1371ca2",
+    'ap-south-1': "ami-d094febf",
+    'sa-east-1': "ami-b6099cda",
 }
 
 ANSIBLE_GLOBAL_VARS = yaml.load(file(ANSIBLE_GLOBAL_VARS_PATH, 'r'))
@@ -83,15 +85,17 @@ class Options(object):
     """
     Options class to replace Ansible OptParser
     """
-    def __init__(self, subset=None, syntax=False, listhosts=False, listtasks=False, listtags=False, module_path=None,
-                 forks=MAX_CONCURRENT_TASKS, connection='smart', remote_user=None, private_key_file=None,
-                 ssh_common_args=None, sftp_extra_args=None, scp_extra_args=None, ssh_extra_args=None,
-                 become=False, become_method='sudo', become_user='root', verbosity=0, check=False):
+    def __init__(self, subset=None, syntax=False, listhosts=False, listtasks=False, listtags=False,
+                 tags=None, module_path=None, forks=MAX_CONCURRENT_TASKS, connection='smart',
+                 remote_user=None, private_key_file=None, ssh_common_args=None, sftp_extra_args=None,
+                 scp_extra_args=None, ssh_extra_args=None, become=False, become_method='sudo',
+                 become_user='root', verbosity=0, check=False):
         self.subset = subset
         self.syntax = syntax
         self.listhosts = listhosts
         self.listtasks = listtasks
         self.listtags = listtags
+        self.tags = tags
         self.module_path = module_path
         self.forks = forks
         self.connection = connection
@@ -110,7 +114,7 @@ class Options(object):
 
 class Runner(object):
 
-    def __init__(self, hostnames, playbook, private_key_file, run_data, become_pass=None,
+    def __init__(self, hostnames, playbook, private_key_file, run_data, tags=None, become_pass=None,
                  verbosity=0, callback=None, subset_pattern=None):
 
         self.hostnames = hostnames
@@ -118,7 +122,7 @@ class Runner(object):
         self.playbook = os.path.join(playbooks_dir, playbook)
         self.run_data = run_data
 
-        self.options = Options(subset=subset_pattern, private_key_file=private_key_file, verbosity=verbosity)
+        self.options = Options(tags=tags, subset=subset_pattern, private_key_file=private_key_file, verbosity=verbosity)
 
         self.display = Display()
         self.display.verbosity = verbosity
@@ -379,7 +383,12 @@ def default_key_file_from_key_pair(ctx, param, value):
 
 
 def default_ami_id_from_region(ctx, param, value):
-    return value if value is not None else DEFAULT_AMI_IDS[ctx.params['region']]
+    global USE_PREBUILT_AMI
+    if value is None:
+        USE_PREBUILT_AMI = True
+        return DEFAULT_AMI_IDS[ctx.params['region']]
+    else:
+        return value
 
 
 def validate_subnet_id(ctx, param, value):
@@ -580,7 +589,13 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
     # TODO: exponential backoff for unreachable hosts?
     while True:
         retry_hosts = set()
-        playbook_args.update(hostnames=INVENTORY_SCRIPT_PATH, playbook="remote.yml", callback=CallbackModule(kwargs['verbose'], retry_hosts), subset_pattern=retry_hosts_pattern)
+        playbook_args.update(hostnames=INVENTORY_SCRIPT_PATH, playbook="remote.yml",
+            callback=CallbackModule(kwargs['verbose'], retry_hosts), subset_pattern=retry_hosts_pattern)
+        if USE_PREBUILT_AMI:
+            playbook_args.update(tags=['configure'])
+        if kwargs['verbose'] > 0:
+            for k, v in playbook_args.iteritems():
+                click.echo("%s: %s" % (k, v))
         try:
             success = Runner(**playbook_args).run()
         except Exception as e:

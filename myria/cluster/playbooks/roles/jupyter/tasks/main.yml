@@ -1,34 +1,56 @@
 ---
 - name: Install Jupyter metapackage
   pip: name=jupyter version={{ jupyter_metapackage_version }}
+  tags:
+    - provision
 
 - name: Generate Jupyter notebook server config file
   command: creates={{ jupyter_config_output_path }} jupyter notebook --generate-config
+  tags:
+    - provision
 
 - name: Create config directory
   file: path={{ jupyter_config_dir }} state=directory mode=0755
+  tags:
+    - provision
 
 - name: Copy config file to final location
   copy: remote_src=True src={{ jupyter_config_output_path }} dest={{ jupyter_config_file }} mode=0644
+  tags:
+    - provision
 
 - name: Create notebook directory
   file: path={{ jupyter_notebooks_dir }} state=directory owner={{myria_user}} group={{myria_group}} mode=0775 recurse=yes
+  tags:
+    - provision
 
 - name: Copy sample notebook to notebook directory
   get_url: url='{{ jupyter_sample_notebook_url }}' dest='{{ jupyter_notebooks_dir }}/myria_examples.ipynb' mode=0775 validate_certs=no timeout=300
+  tags:
+    - provision
 
 - name: Listen on all interfaces
   lineinfile: dest={{ jupyter_config_file }} regexp="^#?\s*c.NotebookApp.ip" line="c.NotebookApp.ip = '*'" backrefs=yes state=present
+  tags:
+    - configure
 
 - name: Listen on configured port
   lineinfile: dest={{ jupyter_config_file }} regexp="^#?\s*c.NotebookApp.port" line="c.NotebookApp.port = {{ jupyter_web_port }}" backrefs=yes state=present
+  tags:
+    - configure
 
 - name: Don't try to open browser on headless system
   lineinfile: dest={{ jupyter_config_file }} regexp="^#?\s*c.NotebookApp.open_browser" line="c.NotebookApp.open_browser = False" backrefs=yes state=present
+  tags:
+    - configure
 
 - name: Configure notebook directory
   lineinfile: dest={{ jupyter_config_file }} regexp="^#?\s*c.NotebookApp.notebook_dir" line="c.NotebookApp.notebook_dir = '{{ jupyter_notebooks_dir }}'" backrefs=yes state=present
+  tags:
+    - configure
 
 - name: Install jupyter-notebook service
   template: src=service.conf.j2 dest=/etc/init/jupyter-notebook.conf backup=yes mode=0644
   notify: restart jupyter-notebook
+  tags:
+    - configure

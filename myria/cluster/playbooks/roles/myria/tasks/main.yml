@@ -6,28 +6,38 @@
   apt: name="{{item}}" update_cache=yes
   with_items:
     - git
+  tags:
+    - provision
 
 - name: Create Myria source directory
   file: path={{myria_path}} state=directory owner={{myria_user}} group={{myria_group}} mode=0775
+  tags:
+    - provision
 
 - name: Clone Myria repository
   git: repo="{{myria_repository_url}}" dest="{{myria_path}}" version="{{myria_branch}}"
   become: yes
   become_user: "{{myria_user}}"
-  notify: restart myria
+  tags:
+    - provision
+    - update
 
 # TODO: remove this code and pass umask to git module when https://github.com/ansible/ansible/issues/10279 is resolved
 - name: Grant primary group write permissions
   file: path={{myria_path}} mode="g+w" recurse=yes
+  tags:
+    - provision
 
 - name: Compile Myria
   become: yes
   become_user: "{{myria_user}}"
-  shell: "./gradlew shadowJar"
+  shell: "./gradlew clean shadowJar"
   args:
     chdir: "{{myria_path}}"
     creates: "{{myria_path}}/build/libs"
-  notify: restart myria
+  tags:
+    - provision
+    - update
 
 - name: Create deployment configuration file
   become: yes
@@ -47,11 +57,17 @@
     chdir: "{{myria_path}}/myriadeploy"
     creates: "{{myria_path}}/myriadeploy/deployment.cfg"
   notify: restart myria
+  tags:
+    - configure
 
 - name: Install Myria service
   template: src=service.conf.j2 dest=/etc/init/myria.conf backup=yes mode=0644
   notify: restart myria
+  tags:
+    - configure
 
-- name: Bounce Myria service on retry
+- name: Bounce Myria service on update
   command: /bin/true
   notify: restart myria
+  tags:
+    - update

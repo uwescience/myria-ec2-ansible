@@ -7,19 +7,19 @@
   when: ansible_os_family == 'Debian'
   apt_key: id="ACCC4CF8" url="https://www.postgresql.org/media/keys/ACCC4CF8.asc"
   tags:
-    - postgresql
+    - provision
 
 - name: Add PostgreSQL official APT repository
   when: ansible_os_family == 'Debian'
   apt_repository: repo="deb http://apt.postgresql.org/pub/repos/apt/ {{ansible_distribution_release}}-pgdg main"
   tags:
-    - postgresql
+    - provision
 
 - name: Install PostgreSQL
   when: ansible_os_family == 'Debian'
   apt: name="postgresql-{{postgres_version}}" state=present update_cache=yes cache_valid_time=3600
   tags:
-    - postgresql
+    - provision
 
 - name: Install dependencies for the Ansible postgres module
   when: ansible_os_family == 'Debian'
@@ -28,19 +28,23 @@
     - python-psycopg2
     - libpq-dev
   tags:
-    - postgresql
+    - provision
 
 - name: reset the cluster - drop the existing one
   shell: "pg_dropcluster --stop {{ postgres_version }} main"
   args:
     removes: "{{ postgres_default_data_dir }}"
   notify: restart postgresql
+  tags:
+    - configure
 
 - name: reset the cluster - create a new one (with specified encoding and locale)
   shell: 'pg_createcluster --start --user=postgres --group=postgres --locale {{ postgres_locale }} -e {{ postgres_encoding }} -d {{ postgres_data_dir }} {{ postgres_version }} {{ postgres_cluster_name }}'
   args:
     creates: "{{ postgres_data_dir }}"
   notify: restart postgresql
+  tags:
+    - configure
 
 - name: altering postgresql.conf - adding listeners
   lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/postgresql.conf
@@ -48,12 +52,16 @@
               line="listen_addresses = '*'"
               state=present
   notify: restart postgresql
+  tags:
+    - configure
 
 - name: altering pg_hba.conf - adding listeners
   lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/pg_hba.conf
               line="host    all   all        0.0.0.0/0   md5"
               state=present
   notify: restart postgresql
+  tags:
+    - configure
 
 - name: altering postgresql.conf - changing shared_buffers
   lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/postgresql.conf
@@ -61,6 +69,8 @@
               line="shared_buffers = {{shared_buffers_mb}}MB"
               state=present
   notify: restart postgresql
+  tags:
+    - configure
 
 - name: altering postgresql.conf - changing work_mem
   lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/postgresql.conf
@@ -68,6 +78,8 @@
               line="work_mem = {{work_mem_mb}}MB"
               state=present
   notify: restart postgresql
+  tags:
+    - configure
 
 - name: Create database instance
   postgresql_db: name=myria_{{item}}
@@ -75,6 +87,8 @@
   become_user: postgres
   with_items: "{{ ec2_tag_worker_id.split(',') }}"
   notify: restart postgresql
+  tags:
+    - configure
 
 - name: Create database user
   postgresql_user: db=myria_{{item}} name={{database_username}} password={{database_password}} priv=ALL
@@ -82,3 +96,5 @@
   become_user: postgres
   with_items: "{{ ec2_tag_worker_id.split(',') }}"
   notify: restart postgresql
+  tags:
+    - configure
