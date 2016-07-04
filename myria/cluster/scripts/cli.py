@@ -559,6 +559,21 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
             pass # best-effort
         sys.exit(1)
 
+    # poll instances for status until all are reachable
+    group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+    instance_ids = [instance.id for instance in group.instances()]
+    while True:
+        ec2 = connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
+        statuses = ec2.get_all_instance_status(instance_ids=instance_ids)
+        for status in statuses:
+            if status.system_status.details['reachability'] != "passed":
+                if kwargs['verbose'] > 0:
+                    click.echo("Not all instances reachable, waiting 60 seconds...")
+                sleep(60)
+                break
+        else:
+            break
+
     # run remote playbook to provision EC2 instances
     retries = 0
     retry_hosts_pattern = None
