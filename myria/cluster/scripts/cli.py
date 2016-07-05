@@ -373,6 +373,34 @@ def get_coordinator_public_hostname(cluster_name, region, profile=None, vpc_id=N
     return coordinator_hostname
 
 
+def wait_for_all_workers_online(cluster_name, region, profile=None, vpc_id=None, verbose=0):
+    coordinator_hostname = get_coordinator_public_hostname(cluster_name, region, profile=profile, vpc_id=vpc_id)
+    workers_url = "http://%(host)s:%(port)d/workers" % dict(host=coordinator_hostname, port=ANSIBLE_GLOBAL_VARS['myria_rest_port'])
+    while True:
+        try:
+            workers_resp = requests.get(workers_url)
+        except requests.ConnectionError:
+            if verbose > 0:
+                click.echo("Myria service unavailable, waiting 60 seconds...")
+        else:
+            if workers_resp.status_code == requests.codes.ok:
+                workers = workers_resp.json()
+                workers_alive_resp = requests.get(workers_url + "/alive")
+                workers_alive = workers_alive_resp.json()
+                if len(workers_alive) == len(workers):
+                    break
+                else:
+                    if verbose > 0:
+                        click.echo("Not all Myria workers online (%d/%d), waiting 60 seconds..." % (
+                            len(workers_alive), len(workers)))
+            else:
+                click.echo("Error response from Myria service (status code %d):\n%s" % (
+                    workers_resp.status_code, workers_resp.text))
+                return False
+        sleep(60)
+    return True
+
+
 def default_key_file_from_key_pair(ctx, param, value):
     if value is None:
         qualified_key_pair = "%s_%s" % (ctx.params['key_pair'], ctx.params['region'])
@@ -615,6 +643,14 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
         else:
             break
 
+    if not wait_for_all_workers_online(cluster_name, kwargs['region'], profile=kwargs['profile'],
+            vpc_id=vpc_id, verbose=kwargs['verbose']):
+        print("""
+The Myria service on your cluster '{cluster_name}' in the AWS '{region}' region returned an error.
+Please refer to the error message above for diagnosis. Exiting (not destroying cluster).
+""".format(cluster_name=cluster_name, region=kwargs['region']))
+        sys.exit(1)
+
     coordinator_public_hostname = None
     try:
         coordinator_public_hostname = get_coordinator_public_hostname(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
@@ -623,32 +659,6 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
     if not coordinator_public_hostname:
         click.echo("Couldn't resolve coordinator public DNS, exiting (not destroying cluster)")
         sys.exit(1)
-
-    # wait for Myria REST service to be available and all workers online
-    workers_url = "http://%(host)s:%(port)d/workers" % dict(host=coordinator_public_hostname, port=ANSIBLE_GLOBAL_VARS['myria_rest_port'])
-    while True:
-        try:
-            workers_resp = requests.get(workers_url)
-        except requests.ConnectionError:
-            if kwargs['verbose'] > 0:
-                click.echo("Myria service unavailable, waiting 60 seconds...")
-        else:
-            if workers_resp.status_code == requests.codes.ok:
-                workers = workers_resp.json()
-                workers_alive_resp = requests.get(workers_url + "/alive")
-                workers_alive = workers_alive_resp.json()
-                if len(workers_alive) == len(workers):
-                    break
-                else:
-                    if kwargs['verbose'] > 0:
-                        click.echo("Not all Myria workers online (%d/%d), waiting 60 seconds..." % (
-                            len(workers_alive), len(workers)))
-            else:
-                click.echo("Error response from Myria service (status code %d):\n%s\n\nDestroying cluster..." % (
-                    workers_resp.status_code, workers_resp.text))
-                terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
-                sys.exit(1)
-        sleep(60)
 
     click.echo("""
 Your new Myria cluster '{cluster_name}' has been launched on Amazon EC2 in the '{region}' region.
@@ -704,6 +714,7 @@ def destroy_cluster(cluster_name, **kwargs):
 
 @run.command('stop')
 @click.argument('cluster_name')
+@click.option('-v', '--verbose', count=True)
 @click.option('--profile', default=None,
     help="Boto profile used to launch your cluster")
 @click.option('--region', show_default=True, default=DEFAULTS['region'],
@@ -713,14 +724,16 @@ def destroy_cluster(cluster_name, **kwargs):
 def stop_cluster(cluster_name, **kwargs):
     group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
     instance_ids = [instance.id for instance in group.instances()]
-    click.echo("Stopping instances %s" % ', '.join(instance_ids))
+    if kwargs['verbose'] > 0:
+        click.echo("Stopping instances %s" % ', '.join(instance_ids))
     ec2 = connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
     ec2.stop_instances(instance_ids=instance_ids)
     while True:
         for instance in group.instances():
             instance.update(validate=True)
             if instance.state != "stopped":
-                click.echo("Instance %s not stopped, retrying in 30 seconds..." % instance.id)
+                if kwargs['verbose'] > 0:
+                    click.echo("Instance %s not stopped, retrying in 30 seconds..." % instance.id)
                 sleep(30)
                 break # break out of for loop
         else: # all instances were stopped, so break out of while loop
@@ -739,6 +752,7 @@ You can start this cluster again by running `{script_name} start {cluster_name} 
 
 @run.command('start')
 @click.argument('cluster_name')
+@click.option('-v', '--verbose', count=True)
 @click.option('--profile', default=None,
     help="Boto profile used to launch your cluster")
 @click.option('--region', show_default=True, default=DEFAULTS['region'],
@@ -748,18 +762,28 @@ You can start this cluster again by running `{script_name} start {cluster_name} 
 def start_cluster(cluster_name, **kwargs):
     group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
     instance_ids = [instance.id for instance in group.instances()]
-    click.echo("Starting instances %s" % ', '.join(instance_ids))
+    if kwargs['verbose'] > 0:
+        click.echo("Starting instances %s" % ', '.join(instance_ids))
     ec2 = connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
     ec2.start_instances(instance_ids=instance_ids)
     while True:
         for instance in group.instances():
             instance.update(validate=True)
             if instance.state != "running":
-                click.echo("Instance %s not started, retrying in 30 seconds..." % instance.id)
+                if kwargs['verbose'] > 0:
+                    click.echo("Instance %s not started, retrying in 30 seconds..." % instance.id)
                 sleep(30)
                 break # break out of for loop
         else: # all instances were started, so break out of while loop
             break
+
+    if not wait_for_all_workers_online(cluster_name, kwargs['region'], profile=kwargs['profile'],
+            vpc_id=kwargs['vpc_id'], verbose=kwargs['verbose']):
+        print("""
+The Myria service on your cluster '{cluster_name}' in the AWS '{region}' region returned an error.
+Please refer to the error message above for diagnosis.
+""".format(cluster_name=cluster_name, region=kwargs['region']))
+        sys.exit(1)
 
     options_str = "--region %s" % kwargs['region']
     if kwargs['profile']:
