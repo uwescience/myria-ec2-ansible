@@ -546,8 +546,8 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
     # TODO: signal handlers are inherited by each child process spawned by Ansible,
     # so messages are (harmlessly) duplicated for each process.
     def signal_handler(sig, frame):
-        # uninstall handler to prevent multiple calls
-        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        # ignore future interrupts
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
         click.echo("User interrupted deployment, destroying cluster...")
         try:
             terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
