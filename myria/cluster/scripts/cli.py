@@ -373,14 +373,14 @@ def get_coordinator_public_hostname(cluster_name, region, profile=None, vpc_id=N
     return coordinator_hostname
 
 
-def wait_for_all_workers_online(cluster_name, region, profile=None, vpc_id=None, verbose=0):
+def wait_for_all_workers_online(cluster_name, region, profile=None, vpc_id=None, silent=False):
     coordinator_hostname = get_coordinator_public_hostname(cluster_name, region, profile=profile, vpc_id=vpc_id)
     workers_url = "http://%(host)s:%(port)d/workers" % dict(host=coordinator_hostname, port=ANSIBLE_GLOBAL_VARS['myria_rest_port'])
     while True:
         try:
             workers_resp = requests.get(workers_url)
         except requests.ConnectionError:
-            if verbose > 0:
+            if not silent:
                 click.echo("Myria service unavailable, waiting 60 seconds...")
         else:
             if workers_resp.status_code == requests.codes.ok:
@@ -390,7 +390,7 @@ def wait_for_all_workers_online(cluster_name, region, profile=None, vpc_id=None,
                 if len(workers_alive) == len(workers):
                     break
                 else:
-                    if verbose > 0:
+                    if not silent:
                         click.echo("Not all Myria workers online (%d/%d), waiting 60 seconds..." % (
                             len(workers_alive), len(workers)))
             else:
@@ -433,11 +433,11 @@ def validate_subnet_id(ctx, param, value):
         return value
 
 
-def validate_log_level(ctx, param, value):
-    if value is not None:
-        if value not in LOG_LEVELS:
-            raise click.BadParameter("valid log levels are %s" % ', '.join(LOG_LEVELS))
-        return value
+def validate_console_logging(ctx, param, value):
+    if value is True:
+        if ctx.params.get('silent') or ctx.params.get('verbose'):
+            raise click.BadParameter("Cannot specify both --silent and --verbose")
+    return value
 
 
 @click.group(context_settings=CONTEXT_SETTINGS)
@@ -448,7 +448,8 @@ def run():
 
 @run.command('create')
 @click.argument('cluster_name')
-@click.option('-v', '--verbose', count=True)
+@click.option('--verbose', is_flag=True, callback=validate_console_logging)
+@click.option('--silent', is_flag=True, callback=validate_console_logging)
 @click.option('--profile', default=None, is_eager=True,
     help="Boto profile used to launch your cluster")
 @click.option('--region', show_default=True, default=DEFAULTS['region'], is_eager=True,
@@ -481,12 +482,13 @@ def run():
     help="Number of virtual CPUs on each EC2 instance available for Myria processes")
 @click.option('--workers-per-node', show_default=True, default=DEFAULTS['workers_per_node'],
     help="Number of Myria workers per cluster node")
-@click.option('--cluster-log-level', show_default=True, callback=validate_log_level, default=DEFAULTS['cluster_log_level'],
-    help="One of %s, from lowest to highest level of detail" % ', '.join(LOG_LEVELS))
+@click.option('--cluster-log-level', show_default=True,
+    type=click.Choice(['OFF', 'FATAL', 'ERROR', 'WARN', 'DEBUG', 'TRACE', 'ALL']), default=DEFAULTS['cluster_log_level'])
 def create_cluster(cluster_name, **kwargs):
     ec2_ini_tmpfile = NamedTemporaryFile(delete=False)
     os.environ['EC2_INI_PATH'] = ec2_ini_tmpfile.name
     vpc_id = kwargs.get('vpc_id')
+    verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
 
     # for displaying example commands
     options_str = "--region %s" % kwargs['region']
@@ -539,7 +541,7 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
         iam_user = iam_conn.get_user()['get_user_response']['get_user_result']['user']['user_name']
     except:
         pass
-    if not iam_user and kwargs['verbose'] > 0:
+    if not iam_user and verbosity > 0:
         click.echo("Warning: unable to find IAM user with credentials provided. IAM user tagging will be disabled.")
 
     # install keyboard interrupt handler to destroy partially-deployed cluster
@@ -565,7 +567,7 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
     if iam_user:
         extra_vars.update(IAM_USER=iam_user)
 
-    if kwargs['verbose'] > 0:
+    if verbosity > 1:
         for k, v in extra_vars.iteritems():
             click.echo("%s: %s" % (k, v))
 
@@ -576,13 +578,13 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
         playbook="local.yml",
         private_key_file=kwargs['private_key_file'],
         run_data=extra_vars,
-        verbosity=kwargs['verbose'],
-        callback=CallbackModule(kwargs['verbose'], failed_hosts))
+        verbosity=verbosity,
+        callback=CallbackModule(verbosity, failed_hosts))
     success = False
     try:
         success = Runner(**playbook_args).run()
     except Exception as e:
-        if kwargs['verbose'] > 0:
+        if not kwargs['silent']:
             click.echo(e)
         click.echo("Unexpected error, destroying cluster...")
         terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
@@ -605,7 +607,7 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
         statuses = ec2.get_all_instance_status(instance_ids=instance_ids)
         for status in statuses:
             if status.system_status.details['reachability'] != "passed":
-                if kwargs['verbose'] > 0:
+                if verbosity > 0:
                     click.echo("Not all instances reachable, waiting 60 seconds...")
                 sleep(60)
                 break
@@ -619,13 +621,13 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
     while True:
         retry_hosts = set()
         playbook_args.update(hostnames=INVENTORY_SCRIPT_PATH, playbook="remote.yml",
-            callback=CallbackModule(kwargs['verbose'], retry_hosts), subset_pattern=retry_hosts_pattern)
+            callback=CallbackModule(verbosity, retry_hosts), subset_pattern=retry_hosts_pattern)
         if USE_PREBUILT_AMI:
             playbook_args.update(tags=['configure'])
         try:
             success = Runner(**playbook_args).run()
         except Exception as e:
-            if kwargs['verbose'] > 0:
+            if verbosity > 0:
                 click.echo(e)
             click.echo("Unexpected error, destroying cluster...")
             terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
@@ -644,7 +646,7 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
             break
 
     if not wait_for_all_workers_online(cluster_name, kwargs['region'], profile=kwargs['profile'],
-            vpc_id=vpc_id, verbose=kwargs['verbose']):
+            vpc_id=vpc_id, silent=(verbosity==0)):
         print("""
 The Myria service on your cluster '{cluster_name}' in the AWS '{region}' region returned an error.
 Please refer to the error message above for diagnosis. Exiting (not destroying cluster).
@@ -714,7 +716,7 @@ def destroy_cluster(cluster_name, **kwargs):
 
 @run.command('stop')
 @click.argument('cluster_name')
-@click.option('-v', '--verbose', count=True)
+@click.option('--silent', is_flag=True)
 @click.option('--profile', default=None,
     help="Boto profile used to launch your cluster")
 @click.option('--region', show_default=True, default=DEFAULTS['region'],
@@ -724,7 +726,7 @@ def destroy_cluster(cluster_name, **kwargs):
 def stop_cluster(cluster_name, **kwargs):
     group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
     instance_ids = [instance.id for instance in group.instances()]
-    if kwargs['verbose'] > 0:
+    if not kwargs['silent']:
         click.echo("Stopping instances %s" % ', '.join(instance_ids))
     ec2 = connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
     ec2.stop_instances(instance_ids=instance_ids)
@@ -732,7 +734,7 @@ def stop_cluster(cluster_name, **kwargs):
         for instance in group.instances():
             instance.update(validate=True)
             if instance.state != "stopped":
-                if kwargs['verbose'] > 0:
+                if not kwargs['silent']:
                     click.echo("Instance %s not stopped, retrying in 30 seconds..." % instance.id)
                 sleep(30)
                 break # break out of for loop
@@ -752,7 +754,7 @@ You can start this cluster again by running `{script_name} start {cluster_name} 
 
 @run.command('start')
 @click.argument('cluster_name')
-@click.option('-v', '--verbose', count=True)
+@click.option('--silent', is_flag=True)
 @click.option('--profile', default=None,
     help="Boto profile used to launch your cluster")
 @click.option('--region', show_default=True, default=DEFAULTS['region'],
@@ -762,7 +764,7 @@ You can start this cluster again by running `{script_name} start {cluster_name} 
 def start_cluster(cluster_name, **kwargs):
     group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
     instance_ids = [instance.id for instance in group.instances()]
-    if kwargs['verbose'] > 0:
+    if not kwargs['silent']:
         click.echo("Starting instances %s" % ', '.join(instance_ids))
     ec2 = connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
     ec2.start_instances(instance_ids=instance_ids)
@@ -770,7 +772,7 @@ def start_cluster(cluster_name, **kwargs):
         for instance in group.instances():
             instance.update(validate=True)
             if instance.state != "running":
-                if kwargs['verbose'] > 0:
+                if not kwargs['silent']:
                     click.echo("Instance %s not started, retrying in 30 seconds..." % instance.id)
                 sleep(30)
                 break # break out of for loop
@@ -778,7 +780,7 @@ def start_cluster(cluster_name, **kwargs):
             break
 
     if not wait_for_all_workers_online(cluster_name, kwargs['region'], profile=kwargs['profile'],
-            vpc_id=kwargs['vpc_id'], verbose=kwargs['verbose']):
+            vpc_id=kwargs['vpc_id'], silent=kwargs['silent']):
         print("""
 The Myria service on your cluster '{cluster_name}' in the AWS '{region}' region returned an error.
 Please refer to the error message above for diagnosis.
