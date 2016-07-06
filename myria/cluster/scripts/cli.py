@@ -36,7 +36,6 @@ from distutils.spawn import find_executable
 import pkg_resources
 VERSION = pkg_resources.get_distribution("myria-cluster").version
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
-USE_PREBUILT_AMI = False
 
 SCRIPT_NAME =  os.path.basename(sys.argv[0])
 # this is necessary because pip loses executable permissions and ansible requires scripts to be executable
@@ -412,9 +411,7 @@ def default_key_file_from_key_pair(ctx, param, value):
 
 
 def default_ami_id_from_region(ctx, param, value):
-    global USE_PREBUILT_AMI
     if value is None:
-        USE_PREBUILT_AMI = True
         return DEFAULT_AMI_IDS[ctx.params['region']]
     else:
         return value
@@ -622,8 +619,10 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
         retry_hosts = set()
         playbook_args.update(hostnames=INVENTORY_SCRIPT_PATH, playbook="remote.yml",
             callback=CallbackModule(verbosity, retry_hosts), subset_pattern=retry_hosts_pattern)
-        if USE_PREBUILT_AMI:
+        if kwargs['ami_id'] in DEFAULT_AMI_IDS.values():
             playbook_args.update(tags=['configure'])
+        else:
+            playbook_args.update(tags=['provision', 'configure'])
         try:
             success = Runner(**playbook_args).run()
         except Exception as e:
