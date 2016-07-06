@@ -747,7 +747,9 @@ def stop_cluster(cluster_name, **kwargs):
         options_str += " --vpc-id %s" % kwargs['vpc_id']
     print("""
 Your Myria cluster '{cluster_name}' in the AWS '{region}' region has been successfully stopped.
-You can start this cluster again by running `{script_name} start {cluster_name} {options}`.
+You can start this cluster again by running
+
+{script_name} start {cluster_name} {options}
 """.format(script_name=SCRIPT_NAME, cluster_name=cluster_name, region=kwargs['region'], options=options_str))
 
 
@@ -791,6 +793,8 @@ Please refer to the error message above for diagnosis.
         options_str += " --profile %s" % kwargs['profile']
     if kwargs['vpc_id']:
         options_str += " --vpc-id %s" % kwargs['vpc_id']
+    coordinator_public_hostname = get_coordinator_public_hostname(
+        cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
     print("""
 Your Myria cluster '{cluster_name}' in the AWS '{region}' region has been successfully restarted.
 The public hostnames of all nodes in this cluster have changed.
@@ -798,8 +802,10 @@ You can view the new values by running
 
 {script_name} list {cluster_name} {options}
 
-(note that the new coordinator has worker ID 0).
-""".format(script_name=SCRIPT_NAME, cluster_name=cluster_name, region=kwargs['region'], options=options_str))
+New public hostname of coordinator:
+{coordinator_public_hostname}
+""".format(script_name=SCRIPT_NAME, cluster_name=cluster_name, region=kwargs['region'], options=options_str,
+    coordinator_public_hostname=coordinator_public_hostname))
 
 
 @run.command('list')
