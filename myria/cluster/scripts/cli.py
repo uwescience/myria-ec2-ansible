@@ -372,6 +372,15 @@ def get_coordinator_public_hostname(cluster_name, region, profile=None, vpc_id=N
     return coordinator_hostname
 
 
+def get_worker_public_hostnames(cluster_name, region, profile=None, vpc_id=None):
+    worker_hostnames = []
+    group = get_security_group_for_cluster(cluster_name, region, profile=profile, vpc_id=vpc_id)
+    for instance in group.instances():
+        if instance.tags.get('cluster-role') == "worker":
+            worker_hostnames.append(instance.public_dns_name)
+    return worker_hostnames
+
+
 def wait_for_all_workers_online(cluster_name, region, profile=None, vpc_id=None, silent=False):
     coordinator_hostname = get_coordinator_public_hostname(cluster_name, region, profile=profile, vpc_id=vpc_id)
     workers_url = "http://%(host)s:%(port)d/workers" % dict(host=coordinator_hostname, port=ANSIBLE_GLOBAL_VARS['myria_rest_port'])
@@ -808,23 +817,43 @@ New public hostname of coordinator:
     coordinator_public_hostname=coordinator_public_hostname))
 
 
+def validate_list_options(ctx, param, value):
+    if value is True:
+        if ctx.params.get('coordinator') or ctx.params.get('workers'):
+            raise click.BadParameter("Cannot specify both --coordinator and --workers")
+        if not ctx.params.get('cluster_name'):
+            raise click.BadParameter("Cluster name required with --coordinator or --workers")
+    return value
+
+
 @run.command('list')
-@click.argument('cluster_name', required=False)
+@click.argument('cluster_name', required=False, is_eager=True)
 @click.option('--profile', default=None,
     help="Boto profile used to launch your cluster")
 @click.option('--region', show_default=True, default=DEFAULTS['region'],
     help="AWS region to launch your cluster in")
 @click.option('--vpc-id', default=None,
     help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
+@click.option('--coordinator', is_flag=True, callback=validate_list_options,
+    help="Output public DNS name of coordinator node")
+@click.option('--workers', is_flag=True, callback=validate_list_options,
+    help="Output public DNS names of worker nodes")
 def list_cluster(cluster_name, **kwargs):
     if cluster_name is not None:
-        group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
-        format_str = "{: <10} {: <50}"
-        print(format_str.format('WORKER_IDS', 'HOST'))
-        print(format_str.format('----------', '----'))
-        instances = sorted(group.instances(), key=lambda i: int(i.tags.get('worker-id').split(',')[0]))
-        for instance in instances:
-            print(format_str.format(instance.tags.get('worker-id'), instance.public_dns_name))
+        if kwargs['coordinator']:
+            print(get_coordinator_public_hostname(
+                cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id']))
+        elif kwargs['workers']:
+            print('\n'.join(get_worker_public_hostnames(
+                cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])))
+        else:
+            group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+            format_str = "{: <10} {: <50}"
+            print(format_str.format('WORKER_IDS', 'HOST'))
+            print(format_str.format('----------', '----'))
+            instances = sorted(group.instances(), key=lambda i: int(i.tags.get('worker-id').split(',')[0]))
+            for instance in instances:
+                print(format_str.format(instance.tags.get('worker-id'), instance.public_dns_name))
     else:
         ec2 = connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
         myria_groups = ec2.get_all_security_groups(filters={'tag:app': "myria"})
@@ -839,11 +868,8 @@ def list_cluster(cluster_name, **kwargs):
         print(format_str.format('CLUSTER', 'NODES', 'COORDINATOR'))
         print(format_str.format('-------', '-----', '-----------'))
         for group in groups:
-            coordinator = ""
-            for instance in group.instances():
-                if instance.tags.get('cluster-role') == "coordinator":
-                    coordinator = instance.public_dns_name
-                    break
+            coordinator = get_coordinator_public_hostname(
+                group.name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
             print(format_str.format(group.name, len(group.instances()), coordinator))
 
 
