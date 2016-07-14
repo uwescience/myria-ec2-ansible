@@ -64,7 +64,36 @@ DEFAULTS = dict(
     cluster_log_level='WARN'
 )
 
-DEFAULT_AMI_IDS = {
+# these mappings are taken from http://uec-images.ubuntu.com/query/trusty/server/released.txt
+
+DEFAULT_STOCK_HVM_AMI_IDS = {
+    'us-west-2': "ami-9abea4fb",
+    'us-east-1': "ami-fce3c696",
+    'us-west-1': "ami-06116566",
+    'eu-west-1': "ami-f95ef58a",
+    'eu-central-1': "ami-87564feb",
+    'ap-northeast-1': "ami-a21529cc",
+    'ap-northeast-2': "ami-09dc1267",
+    'ap-southeast-1': "ami-25c00c46",
+    'ap-southeast-2': "ami-6c14310f",
+    'ap-south-1': "ami-ac5238c3",
+    'sa-east-1': "ami-0fb83963",
+}
+
+DEFAULT_STOCK_PV_AMI_IDS = {
+    'us-west-2': "ami-9dbea4fc",
+    'us-east-1': "ami-b2e3c6d8",
+    'us-west-1': "ami-42116522",
+    'eu-west-1': "ami-be5cf7cd",
+    'eu-central-1': "ami-d0574ebc",
+    'ap-northeast-1': "ami-d91428b7",
+    'ap-northeast-2': "ami-1bc10f75",
+    'ap-southeast-1': "ami-a2c10dc1",
+    'ap-southeast-2': "ami-530b2e30",
+    'sa-east-1': "ami-feb73692",
+}
+
+DEFAULT_PROVISIONED_HVM_AMI_IDS = {
     'us-west-2': "ami-d75392b7",
     'us-east-1': "ami-f9219bee",
     'us-west-1': "ami-0799de67",
@@ -77,6 +106,21 @@ DEFAULT_AMI_IDS = {
     'ap-south-1': "ami-d094febf",
     'sa-east-1': "ami-b6099cda",
 }
+
+DEFAULT_PROVISIONED_PV_AMI_IDS = {
+    'us-west-2': "ami-d7d012b7",
+    'us-east-1': "ami-d5e361c2",
+    'us-west-1': "ami-f4bafc94",
+    'eu-west-1': "ami-821c7df1",
+    'eu-central-1': "ami-e9f80d86",
+    'ap-northeast-1': "ami-3128d750",
+    'ap-northeast-2': "ami-cdc208a3",
+    'ap-southeast-1': "ami-d3a975b0",
+    'ap-southeast-2': "ami-d3517bb0",
+    'sa-east-1': "ami-4f881c23",
+}
+
+PV_INSTANCE_TYPE_FAMILIES = ['c1', 'hi1', 'hs1', 'm1', 'm2', 't1']
 
 ANSIBLE_GLOBAL_VARS = yaml.load(file(ANSIBLE_GLOBAL_VARS_PATH, 'r'))
 
@@ -421,7 +465,17 @@ def default_key_file_from_key_pair(ctx, param, value):
 
 def default_ami_id_from_region(ctx, param, value):
     if value is None:
-        return DEFAULT_AMI_IDS[ctx.params['region']]
+        ami_id = None
+        use_stock_ami = ctx.params['unprovisioned']
+        instance_type_family = ctx.params['instance_type'].split('.')[0]
+        if instance_type_family in PV_INSTANCE_TYPE_FAMILIES:
+            ami_id = DEFAULT_STOCK_PV_AMI_IDS.get(ctx.params['region']) if use_stock_ami else DEFAULT_PROVISIONED_PV_AMI_IDS.get(ctx.params['region'])
+        else:
+            ami_id = DEFAULT_STOCK_HVM_AMI_IDS.get(ctx.params['region']) if use_stock_ami else DEFAULT_PROVISIONED_HVM_AMI_IDS.get(ctx.params['region'])
+        if ami_id is None:
+            raise click.BadParameter("No default %s AMI found for instance type '%s' in region '%s'" % (
+                ("unprovisioned" if use_stock_ami else "provisioned"), ctx.params['instance_type'], ctx.params['region']))
+        return ami_id
     else:
         return value
 
@@ -456,6 +510,7 @@ def run():
 @click.argument('cluster_name')
 @click.option('--verbose', is_flag=True, callback=validate_console_logging)
 @click.option('--silent', is_flag=True, callback=validate_console_logging)
+@click.option('--unprovisioned', is_flag=True, is_eager=True, help="Install required software at deployment")
 @click.option('--profile', default=None, is_eager=True,
     help="Boto profile used to launch your cluster")
 @click.option('--region', show_default=True, default=DEFAULTS['region'], is_eager=True,
@@ -466,12 +521,12 @@ def run():
     help="EC2 key pair used to launch your cluster")
 @click.option('--private-key-file', callback=default_key_file_from_key_pair,
     help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
-@click.option('--instance-type', show_default=True, default=DEFAULTS['instance_type'],
+@click.option('--instance-type', show_default=True, default=DEFAULTS['instance_type'], is_eager=True,
     help="EC2 instance type for your cluster")
 @click.option('--cluster-size', show_default=True, default=DEFAULTS['cluster_size'],
     help="Number of EC2 instances in your cluster")
 @click.option('--ami-id', callback=default_ami_id_from_region,
-    help="ID of the AMI (Amazon Machine Image) used for your EC2 instances [default: %s]" % DEFAULT_AMI_IDS[DEFAULTS['region']])
+    help="ID of the AMI (Amazon Machine Image) used for your EC2 instances [default: %s]" % DEFAULT_PROVISIONED_HVM_AMI_IDS[DEFAULTS['region']])
 @click.option('--subnet-id', default=None, callback=validate_subnet_id,
     help="ID of the VPC subnet in which to launch your EC2 instances")
 @click.option('--role', help="Name of an IAM role used to launch your EC2 instances")
@@ -628,7 +683,7 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
         retry_hosts = set()
         playbook_args.update(hostnames=INVENTORY_SCRIPT_PATH, playbook="remote.yml",
             callback=CallbackModule(verbosity, retry_hosts), subset_pattern=retry_hosts_pattern)
-        if kwargs['ami_id'] in DEFAULT_AMI_IDS.values():
+        if kwargs['ami_id'] in DEFAULT_PROVISIONED_HVM_AMI_IDS.values() + DEFAULT_PROVISIONED_PV_AMI_IDS.values():
             playbook_args.update(tags=['configure'])
         else:
             playbook_args.update(tags=['provision', 'configure'])
