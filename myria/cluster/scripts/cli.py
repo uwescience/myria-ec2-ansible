@@ -94,17 +94,17 @@ DEFAULT_STOCK_PV_AMI_IDS = {
 }
 
 DEFAULT_PROVISIONED_HVM_AMI_IDS = {
-    'us-west-2': "ami-d75392b7",
-    'us-east-1': "ami-f9219bee",
-    'us-west-1': "ami-0799de67",
-    'eu-west-1': "ami-91c6a3e2",
-    'eu-central-1': "ami-4d52b922",
-    'ap-northeast-1': "ami-7917e418",
-    'ap-northeast-2': "ami-7f844e11",
-    'ap-southeast-1': "ami-27b76a44",
-    'ap-southeast-2': "ami-c1371ca2",
-    'ap-south-1': "ami-d094febf",
-    'sa-east-1': "ami-b6099cda",
+    'us-west-2': "ami-dd4a88bd",
+    'us-east-1': "ami-719b1666",
+    'us-west-1': "ami-97efa9f7",
+    'eu-west-1': "ami-dde988ae",
+    'eu-central-1': "ami-9d32c7f2",
+    'ap-northeast-1': "ami-43ea1422",
+    'ap-northeast-2': "ami-a4c10bca",
+    'ap-southeast-1': "ami-37fe2254",
+    'ap-southeast-2': "ami-c90a20aa",
+    'ap-south-1': "ami-d9cfa5b6",
+    'sa-east-1': "ami-9a76e2f6",
 }
 
 DEFAULT_PROVISIONED_PV_AMI_IDS = {
