@@ -1141,7 +1141,29 @@ def run():
     help="Number of Myria workers per cluster node [default: %d]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].workers_per_node)
 @click.option('--cluster-log-level', show_default=True,
     type=click.Choice(LOG_LEVELS), default=DEFAULTS['cluster_log_level'])
+@click.option('--perfenforce', is_flag=True, help="Enable PerfEnforce (will override default cluster configuration)")
 def create_cluster(cluster_name, **kwargs):
+    click.echo(kwargs)
+
+    # If perfenforce is enabled, override the cluster configuration
+    if kwargs['perfenforce']:
+        click.echo("Adjusting cluster options for PerfEnforce...")
+        kwargs['cluster_size'] = 12
+        kwargs['instance_type'] = 'm4.xlarge'
+        kwargs['worker_mem'] = 12
+        kwargs['worker_vcores'] = 2
+        kwargs['node_mem_gb'] = 13
+        kwargs['node_vcores'] = 3
+        kwargs['workers_per_node'] = 1
+        #TEMPORARY WHILE NOT ON MAIN BRANCH OR IMAGE
+        kwargs['unprovisioned'] = True
+        if kwargs['role'] is None:
+            click.echo("Failed, need to specify a role with access to S3...")
+            terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+
+    ec2_ini_tmpfile = NamedTemporaryFile(delete=False)
+    os.environ['EC2_INI_PATH'] = ec2_ini_tmpfile.name
+    vpc_id = kwargs.get('vpc_id')
     verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
     try:
         # we need to validate first without the VPC since it hasn't been determined yet
@@ -1316,6 +1338,11 @@ def login_to_coordinator(cluster_name, **kwargs):
     ssh_arg_str = ' '.join(ssh_args)
     sys.exit(subprocess.call(ssh_arg_str, shell=True))
 
+    if kwargs['perfenforce']:
+        click.echo("""
+PerfEnforce web interface:
+http://{coordinator_public_hostname}:{myria_web_port}/perfenforce""".format(coordinator_public_hostname=coordinator_public_hostname,
+    myria_web_port=ANSIBLE_GLOBAL_VARS['myria_web_port']))
 
 @run.command('logs')
 @click.argument('cluster_name')
