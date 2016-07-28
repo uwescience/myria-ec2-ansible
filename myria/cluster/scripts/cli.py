@@ -98,30 +98,31 @@ DEFAULT_STOCK_PV_AMI_IDS = {
 }
 
 DEFAULT_PROVISIONED_HVM_AMI_IDS = {
-    'us-west-2': "ami-dd4a88bd",
-    'us-east-1': "ami-719b1666",
-    'us-west-1': "ami-97efa9f7",
-    'eu-west-1': "ami-dde988ae",
-    'eu-central-1': "ami-9d32c7f2",
-    'ap-northeast-1': "ami-43ea1422",
-    'ap-northeast-2': "ami-a4c10bca",
-    'ap-southeast-1': "ami-37fe2254",
-    'ap-southeast-2': "ami-c90a20aa",
-    'ap-south-1': "ami-d9cfa5b6",
-    'sa-east-1': "ami-9a76e2f6",
+    'us-west-2': "ami-a06ea1c0",
+    'us-east-1': "ami-c84dd9df",
+    'us-west-1': "ami-c82666a8",
+    'eu-west-1': "ami-c87e12bb",
+    'eu-central-1': "ami-c944b0a6",
+    'ap-northeast-1': "ami-139d5872",
+    'ap-northeast-2': "ami-f908c297",
+    'ap-southeast-1': "ami-dd0fd0be",
+    'ap-southeast-2': "ami-752a1f16",
+    'ap-south-1': "ami-3334415c",
+    'sa-east-1': "ami-3b54c357",
 }
 
 DEFAULT_PROVISIONED_PV_AMI_IDS = {
-    'us-west-2': "ami-d7d012b7",
-    'us-east-1': "ami-d5e361c2",
-    'us-west-1': "ami-f4bafc94",
-    'eu-west-1': "ami-821c7df1",
-    'eu-central-1': "ami-e9f80d86",
-    'ap-northeast-1': "ami-3128d750",
-    'ap-northeast-2': "ami-cdc208a3",
-    'ap-southeast-1': "ami-d3a975b0",
-    'ap-southeast-2': "ami-d3517bb0",
-    'sa-east-1': "ami-4f881c23",
+    'us-west-2': "ami-7c60af1c",
+    'us-east-1': "ami-8364f094",
+    'us-west-1': "ami-952868f5",
+    'eu-west-1': "ami-f94e228a",
+    'eu-central-1': "ami-3947b356",
+    'ap-northeast-1': "ami-ca9e5bab",
+    'ap-northeast-2': "ami-e90bc187",
+    'ap-southeast-1': "ami-770ed114",
+    'ap-southeast-2': "ami-2c3d084f",
+    'ap-south-1': "ami-d13643be",
+    'sa-east-1': "ami-7555c219",
 }
 
 PV_INSTANCE_TYPE_FAMILIES = ['c1', 'hi1', 'hs1', 'm1', 'm2', 't1']
