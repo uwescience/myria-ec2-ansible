@@ -91,7 +91,7 @@
 
   <property>
     <name>yarn.nodemanager.resource.memory-mb</name>
-    <value>{{ (1024 * (node_mem_gb | float)) | int }}</value>
+    <value>{{ node_mem_mb }}</value>
   </property>
 
   <property>
@@ -100,13 +100,18 @@
   </property>
 
   <property>
+    <name>yarn.scheduler.minimum-allocation-mb</name>
+    <value>{{ driver_mem_mb }}</value>
+  </property>
+
+  <property>
     <name>yarn.scheduler.maximum-allocation-mb</name>
-    <value>{{ (1024 * (container_mem_gb | float)) | int }}</value>
+    <value>{{ [coordinator_mem_mb, worker_mem_mb] | max }}</value>
   </property>
 
   <property>
     <name>yarn.scheduler.maximum-allocation-vcores</name>
-    <value>{{ container_vcores }}</value>
+    <value>{{ [coordinator_vcores, worker_vcores] | max }}</value>
   </property>
 
   <property>

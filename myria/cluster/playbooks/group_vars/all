@@ -51,8 +51,11 @@ container_executor: org.apache.hadoop.yarn.server.nodemanager.LinuxContainerExec
 cgroups_mount_enable: true
 cgroups_mount_dir: /sys/fs/cgroup
 
-container_mem_gb: "{{ WORKER_MEM_GB | float }}"
-container_vcores: "{{ WORKER_VCORES | int }}"
+driver_mem_gb: "{{ DRIVER_MEM_GB | float }}"
+coordinator_mem_gb: "{{ COORDINATOR_MEM_GB | float }}"
+coordinator_vcores: "{{ COORDINATOR_VCORES | int }}"
+worker_mem_gb: "{{ WORKER_MEM_GB | float }}"
+worker_vcores: "{{ WORKER_VCORES | int }}"
 
 #----------------------------------
 #   Myria Variables

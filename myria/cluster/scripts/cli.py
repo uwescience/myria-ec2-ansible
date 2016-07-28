@@ -56,7 +56,11 @@ DEFAULTS = dict(
     instance_type='t2.large',
     cluster_size=5,
     data_volume_size_gb=20,
-    worker_mem_gb=4.0,
+    driver_mem_gb=0.5,
+    coordinator_mem_gb=5.5,
+    worker_mem_gb=5.5,
+    heap_mem_fraction=0.9,
+    coordinator_vcores=1,
     worker_vcores=1,
     node_mem_gb=6.0,
     node_vcores=2,
@@ -533,8 +537,16 @@ def run():
 @click.option('--spot-price', help="Price in dollars of the maximum bid for an EC2 spot instance request")
 @click.option('--data-volume-size-gb', show_default=True, default=DEFAULTS['data_volume_size_gb'],
     help="Size of each instance's EBS data volume (used by Hadoop and PostgreSQL) in GB")
+@click.option('--driver-mem-gb', show_default=True, default=DEFAULTS['driver_mem_gb'],
+    help="Physical memory (in GB) reserved for Myria driver")
+@click.option('--coordinator-mem-gb', show_default=True, default=DEFAULTS['coordinator_mem_gb'],
+    help="Physical memory (in GB) reserved for Myria coordinator")
 @click.option('--worker-mem-gb', show_default=True, default=DEFAULTS['worker_mem_gb'],
     help="Physical memory (in GB) reserved for each Myria worker")
+@click.option('--heap-mem-fraction', show_default=True, default=DEFAULTS['heap_mem_fraction'],
+    help="Fraction of container memory used for JVM heap")
+@click.option('--coordinator-vcores', show_default=True, default=DEFAULTS['coordinator_vcores'],
+    help="Number of virtual CPUs reserved for Myria coordinator")
 @click.option('--worker-vcores', show_default=True, default=DEFAULTS['worker_vcores'],
     help="Number of virtual CPUs reserved for each Myria worker")
 @click.option('--node-mem-gb', show_default=True, default=DEFAULTS['node_mem_gb'],

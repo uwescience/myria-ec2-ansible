@@ -6,3 +6,4 @@ namenode_port: 8020
 coordinator_port: 8001
 worker_base_port: 9001
 database_password: uwdb # TODO fix me :(
+heap_mem_fraction: "{{ HEAP_MEM_FRACTION | float }}"

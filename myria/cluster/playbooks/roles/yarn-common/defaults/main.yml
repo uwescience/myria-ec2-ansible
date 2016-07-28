@@ -10,4 +10,8 @@ hdfs_datanode_data_dir: '{{data_vol_mount_dir}}/datanode'
 hdfs_replication_factor: 2
 node_mem_gb: "{{ NODE_MEM_GB | float }}"
 node_vcores: "{{ NODE_VCORES | int }}"
+node_mem_mb: "{{ (1024 * (NODE_MEM_GB | float)) | int }}"
+driver_mem_mb: "{{ (1024 * (DRIVER_MEM_GB | float)) | int }}"
+coordinator_mem_mb: "{{ (1024 * (COORDINATOR_MEM_GB | float)) | int }}"
+worker_mem_mb: "{{ (1024 * (WORKER_MEM_GB | float)) | int }}"
 hadoop_log_dir: "{{ data_vol_mount_dir }}/hadoop/logs"
