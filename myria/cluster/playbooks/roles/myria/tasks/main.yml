@@ -39,10 +39,11 @@
     - provision
     - update
 
-- name: Create deployment configuration file
+- name: Create deployment configuration file (atomically)
   become: yes
   become_user: "{{myria_user}}"
-  shell: "./create_deployment.py {{myria_path}} {{ hostvars[groups['tag_cluster_role_coordinator'][0]]['ansible_ec2_local_hostname'] }} \
+  shell: "TEMPFILE=$(mktemp) &&
+          ./create_deployment.py {{myria_path}} {{ hostvars[groups['tag_cluster_role_coordinator'][0]]['ansible_ec2_local_hostname'] }} \
                                                     {% for host in groups['tag_cluster_role_worker'] %} {% for i in range(WORKERS_PER_NODE) %} {{ hostvars[host]['ansible_ec2_local_hostname'] }} {% endfor %} {% endfor %} \
                                                     --rest-port {{myria_rest_port}} \
                                                     --coordinator-port {{coordinator_port}} \
@@ -56,7 +57,7 @@
                                                     --worker-cores-number {{worker_vcores}} \
                                                     --worker-databases {% for i in range(WORKERS_PER_NODE * groups['tag_cluster_role_worker']|length) %} myria_{{i+1}} {% endfor %} \
                                                     --persist-uri hdfs://{{hostvars[groups['tag_cluster_role_coordinator'][0]]['ansible_ec2_local_hostname']}}:{{namenode_port}}
-                > {{myria_path}}/myriadeploy/deployment.cfg"
+          > ${TEMPFILE} && mv ${TEMPFILE} {{myria_path}}/myriadeploy/deployment.cfg"
   args:
     chdir: "{{myria_path}}/myriadeploy"
     creates: "{{myria_path}}/myriadeploy/deployment.cfg"
