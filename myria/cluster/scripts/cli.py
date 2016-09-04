@@ -647,8 +647,7 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
     extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None)
     extra_vars.update(CLUSTER_NAME=cluster_name)
     extra_vars.update(USER=USER)
-    # extra_vars.update(ansible_python_interpreter='/usr/bin/env python')
-    extra_vars.update(ansible_python_interpreter='/usr/bin/python2.7')
+    extra_vars.update(ansible_python_interpreter='/usr/bin/env python')
     extra_vars.update(EC2_INI_PATH=ec2_ini_tmpfile.name)
     if iam_user:
         extra_vars.update(IAM_USER=iam_user)
@@ -1109,8 +1108,7 @@ instance_str + """delete security group '{ami_name}' (ID: {group_id}) from the A
     extra_vars.update(AMI_NAME=ami_name)
     extra_vars.update(CLUSTER_NAME=ami_name)
     extra_vars.update(USER=USER)
-    # extra_vars.update(ansible_python_interpreter='/usr/bin/env python')
-    extra_vars.update(ansible_python_interpreter='/usr/bin/python2.7')
+    extra_vars.update(ansible_python_interpreter='/usr/bin/env python')
     extra_vars.update(EC2_INI_PATH=ec2_ini_tmpfile.name)
     if iam_user:
         extra_vars.update(IAM_USER=iam_user)

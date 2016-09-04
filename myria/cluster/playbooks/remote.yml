@@ -5,11 +5,12 @@
 # (tags within a role invocation actually apply the tags to every task within the role).
 # The only way to achieve the same effect within a playbook is to use variables and
 # conditionals instead of tags, and we don't want to go there (yet).
+
 - name: Gather EC2 facts
   hosts: ec2
-  gather_facts: true
   remote_user: ubuntu
   become: yes
+  gather_facts: true
   tasks:
     - ec2_facts:
 

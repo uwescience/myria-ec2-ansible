@@ -1,0 +1,66 @@
+---
+# ansible-playbook "$MYRIA_ANSIBLE_DIR/amibuilder.yml" --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE" --tags=provision
+# NB: this playbook is expected to be called with `--tags=provision`!
+# By (mis)design, it is impossible to filter by tags within a playbook itself
+# (tags within a role invocation actually apply the tags to every task within the role).
+# The only way to achieve the same effect within a playbook is to use variables and
+# conditionals instead of tags, and we don't want to go there (yet).
+- hosts: localhost
+  connection: local
+  tasks:
+  - name: Create security group for this instance
+    ec2_group:
+      name: "{{AMI_NAME}}"
+      description: "Myria AMI builder security group"
+      profile: "{{PROFILE | default(omit)}}"
+      region: "{{REGION}}"
+      vpc_id: "{{VPC_ID | default(omit)}}"
+      rules:
+      - proto: tcp
+        from_port: 22
+        to_port: 22
+        cidr_ip: 0.0.0.0/0
+      rules_egress:
+      - proto: all
+        cidr_ip: 0.0.0.0/0
+    register: ec2_group
+
+  - name: Tag security group
+    ec2_tag:
+      profile: "{{PROFILE | default(omit)}}"
+      region: "{{REGION}}"
+      resource: "{{ec2_group.group_id}}"
+      state: present
+      tags:
+        app: "myria-ami-builder"
+        "user:Name": "{{IAM_USER | default(omit)}}"
+
+  - name: Launch AMI template instance
+    ec2:
+      profile: "{{PROFILE | default(omit)}}"
+      region: "{{REGION}}"
+      zone: "{{ZONE | default(omit)}}"
+      keypair: "{{KEY_PAIR}}"
+      group_id: "{{ec2_group.group_id}}"
+      instance_type: "{{INSTANCE_TYPE}}"
+      image: "{{BASE_AMI_ID}}"
+      vpc_subnet_id: "{{SUBNET_ID | default(omit)}}"
+      assign_public_ip: "{{'yes' if SUBNET_ID is defined else omit}}"
+      count: 1
+      wait: yes
+      wait_timeout: 600
+      instance_tags:
+        Name: "Creating Myria image {{AMI_NAME}}"
+        app: "myria-ami-builder"
+        "user:Name": "{{IAM_USER | default(omit)}}"
+        "cluster-role": "coordinator"
+    register: ec2
+
+  - name: Wait for SSH to come up on instance
+    wait_for: host={{ item.public_ip }} port=22 delay=0 timeout=300 state=started
+    async: 300
+    poll: 30
+    with_items: "{{ec2.instances}}"
+
+  - name: Write ec2.ini file for dynamic inventory
+    template: src=ec2.ini.j2 dest={{ EC2_INI_PATH }}
