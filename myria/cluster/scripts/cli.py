@@ -11,7 +11,7 @@ import yaml
 import requests
 
 import boto
-from boto.ec2 import connect_to_region
+import boto.ec2
 import boto.vpc
 import boto.iam
 from boto.exception import EC2ResponseError
@@ -370,7 +370,7 @@ class CallbackModule(CallbackBase):
 
 
 def get_security_group_for_cluster(cluster_name, region, profile=None, vpc_id=None):
-    ec2 = connect_to_region(region, profile_name=profile)
+    ec2 = boto.ec2.connect_to_region(region, profile_name=profile)
     groups = []
     if vpc_id:
         # In the EC2 API, filters can only express OR,
@@ -393,9 +393,9 @@ def terminate_cluster(cluster_name, region, profile=None, vpc_id=None):
     # we want to allow users to delete a security group with no instances
     if instance_ids:
         click.echo("Terminating instances %s" % ', '.join(instance_ids))
-        ec2 = connect_to_region(region, profile_name=profile)
+        ec2 = boto.ec2.connect_to_region(region, profile_name=profile)
         ec2.terminate_instances(instance_ids=instance_ids)
-    click.echo("Deleting security group %s (%s)" % (group.name, group.id))
+    click.echo("Deleting security group '%s' (%s)" % (group.name, group.id))
     # EC2 can take a while to update dependencies, so retry until we succeed
     while True:
         try:
@@ -407,7 +407,7 @@ def terminate_cluster(cluster_name, region, profile=None, vpc_id=None):
             else:
                 raise
         else:
-            click.echo("Security group %s (%s) successfully deleted" % (group.name, group.id))
+            click.echo("Security group '%s' (%s) successfully deleted" % (group.name, group.id))
             break
 
 
@@ -505,6 +505,48 @@ def validate_console_logging(ctx, param, value):
     return value
 
 
+def validate_aws_settings(region, profile=None, vpc_id=None, verbosity=0):
+    # abort if credentials are not available
+    try:
+        boto.ec2.connect_to_region(region, profile_name=profile)
+    # except:
+    except Exception as e:
+        if verbosity > 0:
+            click.echo(e)
+        click.echo("""
+Unable to connect to the '{region}' EC2 region using the '{profile}' profile.
+Please ensure that your AWS credentials are correctly configured:
+
+http://boto3.readthedocs.io/en/latest/guide/configuration.html
+""".format(region=region, profile=profile if profile else "default"))
+        sys.exit(1)
+
+    # abort if vpc_id is not supplied and no default VPC exists
+    if not vpc_id:
+        vpc_conn = boto.vpc.connect_to_region(region, profile_name=profile)
+        default_vpcs = vpc_conn.get_all_vpcs(filters={'isDefault': "true"})
+        if not default_vpcs:
+            click.echo("""
+No default VPC is configured for your AWS account in the '{region}' region.
+Please ask your administrator to create a default VPC or specify a VPC subnet using the `--subnet-id` option.
+""".format(region=region))
+            sys.exit(1)
+
+
+def get_iam_user(region, profile=None, verbosity=0):
+    # extract IAM user name for resource tagging
+    iam_conn = boto.iam.connect_to_region(region, profile_name=profile)
+    iam_user = None
+    try:
+        # TODO: once we move to boto3, we can get better info on callling principal from boto3.sts.get_caller_identity()
+        iam_user = iam_conn.get_user()['get_user_response']['get_user_result']['user']['user_name']
+    except:
+        pass
+    if not iam_user and verbosity > 0:
+        click.echo("Warning: unable to find IAM user with credentials provided. IAM user tagging will be disabled.")
+    return iam_user
+
+
 @click.group(context_settings=CONTEXT_SETTINGS)
 @click.version_option(version=VERSION)
 def run():
@@ -520,7 +562,7 @@ def run():
     help="Boto profile used to launch your cluster")
 @click.option('--region', show_default=True, default=DEFAULTS['region'], is_eager=True,
     help="AWS region to launch your cluster in")
-@click.option('--zone', show_default=True, default=None,
+@click.option('--zone', show_default=True, default=None, is_eager=True,
     help="AWS availability zone to launch your cluster in")
 @click.option('--key-pair', show_default=True, default=DEFAULTS['key_pair'],
     help="EC2 key pair used to launch your cluster")
@@ -559,10 +601,11 @@ def run():
 @click.option('--cluster-log-level', show_default=True,
     type=click.Choice(['OFF', 'FATAL', 'ERROR', 'WARN', 'DEBUG', 'TRACE', 'ALL']), default=DEFAULTS['cluster_log_level'])
 def create_cluster(cluster_name, **kwargs):
+    verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
     ec2_ini_tmpfile = NamedTemporaryFile(delete=False)
     os.environ['EC2_INI_PATH'] = ec2_ini_tmpfile.name
     vpc_id = kwargs.get('vpc_id')
-    verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
+    iam_user = get_iam_user(kwargs['region'], profile=kwargs['profile'], verbosity=verbosity)
 
     # for displaying example commands
     options_str = "--region %s" % kwargs['region']
@@ -571,28 +614,7 @@ def create_cluster(cluster_name, **kwargs):
     if vpc_id:
         options_str += " --vpc-id %s" % vpc_id
 
-    # abort if credentials are not available
-    try:
-        connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
-    except:
-        click.echo("""
-Unable to connect to the '{region}' EC2 region using the '{profile}' profile.
-Please ensure that your AWS credentials are correctly configured:
-
-http://boto3.readthedocs.io/en/latest/guide/configuration.html
-""".format(region=kwargs['region'], profile=kwargs['profile'] if kwargs['profile'] else "default"))
-        sys.exit(1)
-
-    # abort if vpc_id is not supplied and no default VPC exists
-    if not vpc_id:
-        vpc_conn = boto.vpc.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
-        default_vpcs = vpc_conn.get_all_vpcs(filters={'isDefault': "true"})
-        if not default_vpcs:
-            click.echo("""
-No default VPC is configured for your AWS account in the '{region}' region.
-Please ask your administrator to create a default VPC or specify a VPC subnet using the `--subnet-id` option.
-""".format(region=kwargs['region']))
-            sys.exit(1)
+    validate_aws_settings(kwargs['region'], kwargs['profile'], vpc_id, verbosity=verbosity)
 
     # abort if cluster already exists
     try:
@@ -606,17 +628,6 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
 {script_name} destroy {cluster_name} {options}
 """.format(script_name=SCRIPT_NAME, cluster_name=cluster_name, region=kwargs['region'], options=options_str))
         sys.exit(1)
-
-    # extract IAM user name for resource tagging
-    iam_conn = boto.iam.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
-    iam_user = None
-    try:
-        # TODO: once we move to boto3, we can get better info on callling principal from boto3.sts.get_caller_identity()
-        iam_user = iam_conn.get_user()['get_user_response']['get_user_result']['user']['user_name']
-    except:
-        pass
-    if not iam_user and verbosity > 0:
-        click.echo("Warning: unable to find IAM user with credentials provided. IAM user tagging will be disabled.")
 
     # install keyboard interrupt handler to destroy partially-deployed cluster
     # TODO: signal handlers are inherited by each child process spawned by Ansible,
@@ -636,7 +647,8 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
     extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None)
     extra_vars.update(CLUSTER_NAME=cluster_name)
     extra_vars.update(USER=USER)
-    extra_vars.update(ansible_python_interpreter='/usr/bin/env python')
+    # extra_vars.update(ansible_python_interpreter='/usr/bin/env python')
+    extra_vars.update(ansible_python_interpreter='/usr/bin/python2.7')
     extra_vars.update(EC2_INI_PATH=ec2_ini_tmpfile.name)
     if iam_user:
         extra_vars.update(IAM_USER=iam_user)
@@ -658,7 +670,7 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
     try:
         success = Runner(**playbook_args).run()
     except Exception as e:
-        if not kwargs['silent']:
+        if verbosity > 0:
             click.echo(e)
         click.echo("Unexpected error, destroying cluster...")
         terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
@@ -677,7 +689,7 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
     group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
     instance_ids = [instance.id for instance in group.instances()]
     while True:
-        ec2 = connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
+        ec2 = boto.ec2.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
         statuses = ec2.get_all_instance_status(instance_ids=instance_ids)
         for status in statuses:
             if status.system_status.details['reachability'] != "passed":
@@ -804,7 +816,7 @@ def stop_cluster(cluster_name, **kwargs):
     instance_ids = [instance.id for instance in group.instances()]
     if not kwargs['silent']:
         click.echo("Stopping instances %s" % ', '.join(instance_ids))
-    ec2 = connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
+    ec2 = boto.ec2.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
     ec2.stop_instances(instance_ids=instance_ids)
     while True:
         for instance in group.instances():
@@ -844,7 +856,7 @@ def start_cluster(cluster_name, **kwargs):
     instance_ids = [instance.id for instance in group.instances()]
     if not kwargs['silent']:
         click.echo("Starting instances %s" % ', '.join(instance_ids))
-    ec2 = connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
+    ec2 = boto.ec2.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
     ec2.start_instances(instance_ids=instance_ids)
     while True:
         for instance in group.instances():
@@ -858,7 +870,7 @@ def start_cluster(cluster_name, **kwargs):
             break
 
     if not wait_for_all_workers_online(cluster_name, kwargs['region'], profile=kwargs['profile'],
-            vpc_id=kwargs['vpc_id'], silent=kwargs['silent']):
+            vpc_id=kwargs['vpc_id'], verbosity=kwargs['silent']):
         print("""
 The Myria service on your cluster '{cluster_name}' in the AWS '{region}' region returned an error.
 Please refer to the error message above for diagnosis.
@@ -923,7 +935,7 @@ def list_cluster(cluster_name, **kwargs):
             for instance in instances:
                 print(format_str.format(instance.tags.get('worker-id'), instance.public_dns_name))
     else:
-        ec2 = connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
+        ec2 = boto.ec2.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
         myria_groups = ec2.get_all_security_groups(filters={'tag:app': "myria"})
         groups = myria_groups
         if kwargs['vpc_id']:
@@ -939,6 +951,284 @@ def list_cluster(cluster_name, **kwargs):
             coordinator = get_coordinator_public_hostname(
                 group.name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
             print(format_str.format(group.name, len(group.instances()), coordinator))
+
+
+def default_base_ami_id_from_region(ctx, param, value):
+    if value is None:
+        ami_id = None
+        instance_type_family = ctx.params['instance_type'].split('.')[0]
+        if instance_type_family in PV_INSTANCE_TYPE_FAMILIES:
+            ami_id = DEFAULT_STOCK_PV_AMI_IDS.get(ctx.params['region'])
+        else:
+            ami_id = DEFAULT_STOCK_HVM_AMI_IDS.get(ctx.params['region'])
+        if ami_id is None:
+            raise click.BadParameter("No default AMI found for instance type '%s' in region '%s'" % (
+                ctx.params['instance_type'], ctx.params['region']))
+        return ami_id
+    else:
+        ctx.params['explicit_base_ami_id'] = True
+        if ctx.params.get('virt_type') is not None:
+            raise click.BadParameter("Cannot specify --%s if --base-ami-id is specified" % ctx.params['virt_type'])
+        return value
+
+
+def validate_virt_type(ctx, param, value):
+    if value is not None:
+        if ctx.params.get('explicit_base_ami_id'):
+            raise click.BadParameter("Cannot specify --%s if --base-ami-id is specified" % value)
+        if value == 'hvm':
+            instance_type_family = ctx.params['instance_type'].split('.')[0]
+            if instance_type_family in PV_INSTANCE_TYPE_FAMILIES:
+                raise click.BadParameter("Instance type %s is incompatible with HVM virtualization" % ctx.params['instance_type'])
+            ctx.params['base_ami_id'] = DEFAULT_STOCK_HVM_AMI_IDS[ctx.params['region']]
+        elif value == 'pv':
+            instance_type_family = ctx.params['instance_type'].split('.')[0]
+            if instance_type_family not in PV_INSTANCE_TYPE_FAMILIES:
+                raise click.BadParameter("Instance type %s is incompatible with PV virtualization" % ctx.params['instance_type'])
+            ctx.params['base_ami_id'] = DEFAULT_STOCK_PV_AMI_IDS[ctx.params['region']]
+    return value
+
+
+def wait_until_image_available(ami_id, region, profile=None, verbosity=0):
+    ec2 = boto.ec2.connect_to_region(region, profile_name=profile)
+    image = ec2.get_image(ami_id)
+    if verbosity > 0:
+        click.echo("Waiting for AMI %s in region '%s' to become available..." % (ami_id, region))
+    while image.state == 'pending':
+        sleep(5)
+        image.update()
+    if image.state == 'available':
+        return True
+    else:
+        if verbosity > 0:
+            click.echo("Unexpected image status '%s' for AMI %s in region '%s'" % (image.state, ami_id, region))
+        return False
+
+
+@run.command('create-image')
+@click.argument('ami_name')
+@click.option('--verbose', is_flag=True, callback=validate_console_logging)
+@click.option('--silent', is_flag=True, callback=validate_console_logging)
+@click.option('--private', is_flag=True,
+    help="Allow only this AWS account to use the new AMI to launch an EC2 instance")
+@click.option('--overwrite', is_flag=True,
+    help="Automatically deregister any existing AMI with the same name as new AMI")
+@click.option('--force-terminate', is_flag=True,
+    help="Automatically terminate any AMI builder instance with the same name as new AMI")
+@click.option('--hvm', 'virt_type', flag_value='hvm', callback=validate_virt_type,
+    help="Hardware Virtual Machine virtualization type (for current-generation EC2 instance types)")
+@click.option('--pv', 'virt_type', flag_value='pv', callback=validate_virt_type,
+    help="Paravirtual virtualization type (for previous-generation EC2 instance types)")
+@click.option('--profile', default=None,
+    help="Boto profile used to launch AMI builder instance")
+@click.option('--key-pair', show_default=True, default=DEFAULTS['key_pair'],
+    help="EC2 key pair used to launch AMI builder instance")
+@click.option('--private-key-file', callback=default_key_file_from_key_pair,
+    help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
+@click.option('--instance-type', show_default=True, default=DEFAULTS['instance_type'], is_eager=True,
+    help="EC2 instance type for AMI builder instance")
+@click.option('--region', show_default=True, default=DEFAULTS['region'], is_eager=True,
+    help="AWS region to launch AMI builder instance")
+@click.option('--zone', show_default=True, default=None,
+    help="AWS availability zone to launch AMI builder instance in")
+@click.option('--subnet-id', default=None, callback=validate_subnet_id,
+    help="ID of the VPC (Virtual Private Cloud) subnet used to launch AMI builder instance")
+@click.option('--base-ami-id', callback=default_base_ami_id_from_region,
+    help="ID of AMI (Amazon Machine Image) used to create new AMI [default: %s]" % DEFAULT_STOCK_HVM_AMI_IDS[DEFAULTS['region']])
+@click.option('--description', default=None,
+    help="Description of new AMI (\"Name\" in AWS console)")
+@click.option('--copy-to-region', default=None, multiple=True,
+    help="Region to copy new AMI (can be specified multiple times)")
+def create_image(ami_name, **kwargs):
+    verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
+    vpc_id = kwargs.get('vpc_id')
+    iam_user = get_iam_user(kwargs['region'], profile=kwargs['profile'], verbosity=verbosity)
+    ec2_ini_tmpfile = NamedTemporaryFile(delete=False)
+    os.environ['EC2_INI_PATH'] = ec2_ini_tmpfile.name
+
+    validate_aws_settings(kwargs['region'], kwargs['profile'], vpc_id, verbosity=verbosity)
+
+    # abort or deregister if AMI with the same name already exists
+    regions = kwargs['copy_to_region'] + (kwargs['region'],)
+    for region in regions:
+        ec2 = boto.ec2.connect_to_region(region, profile_name=kwargs['profile'])
+        images = ec2.get_all_images(filters={'name': ami_name})
+        if images:
+            if kwargs['overwrite']:
+                click.echo("Deregistering existing AMI with name '%s' (ID: %s) in region '%s'..." % (ami_name, images[0].id, region))
+                images[0].deregister(delete_snapshot=True)
+                # TODO: wait here for image to become unavailable, or we can hit a race at image creation
+            else:
+                click.echo("""
+    AMI '{ami_name}' already exists in the '{region}' region.
+    If you wish to create a new AMI with the same name,
+    first deregister the existing AMI from the AWS console or
+    run this command with the `--overwrite` option.
+    """.format(ami_name=ami_name, region=region))
+                sys.exit(1)
+
+    # abort or delete group if group already exists
+    instance_id = None
+    group_id = None
+    try:
+        group = get_security_group_for_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+    except:
+        pass
+    else:
+        group_id = group.id
+        if kwargs['force_terminate']:
+            click.echo("Destroying old AMI builder instance...")
+            terminate_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+        else:
+            if group.instances():
+                instance_id = group.instances()[0].id
+            instance_str = "first terminate instance '{instance_id}' and then " if instance_id else ""
+            click.echo("""
+A builder instance for the AMI name '{ami_name}' already exists in the '{region}' region.
+If you wish to create a new AMI with this name, please rerun this command with the `--force-terminate` switch or """ +
+instance_str + """delete security group '{ami_name}' (ID: {group_id}) from the AWS console or AWS CLI.
+""".format(ami_name=ami_name, region=kwargs['region'], group_id=group_id, instance_id=instance_id))
+            sys.exit(1)
+
+    # install keyboard interrupt handler to destroy partially-deployed cluster
+    # TODO: signal handlers are inherited by each child process spawned by Ansible,
+    # so messages are (harmlessly) duplicated for each process.
+    def signal_handler(sig, frame):
+        # ignore future interrupts
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        click.echo("User interrupted deployment, destroying instance...")
+        try:
+            terminate_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+        except:
+            pass # best-effort
+        sys.exit(1)
+
+    signal.signal(signal.SIGINT, signal_handler)
+
+    extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None)
+    extra_vars.update(AMI_NAME=ami_name)
+    extra_vars.update(CLUSTER_NAME=ami_name)
+    extra_vars.update(USER=USER)
+    # extra_vars.update(ansible_python_interpreter='/usr/bin/env python')
+    extra_vars.update(ansible_python_interpreter='/usr/bin/python2.7')
+    extra_vars.update(EC2_INI_PATH=ec2_ini_tmpfile.name)
+    if iam_user:
+        extra_vars.update(IAM_USER=iam_user)
+
+    if verbosity > 1:
+        for k, v in extra_vars.iteritems():
+            click.echo("%s: %s" % (k, v))
+
+    # run local playbook to launch EC2 instances
+    click.echo("Launching AMI builder instance...")
+    failed_hosts = set()
+    playbook_args = dict(
+        hostnames=['localhost'],
+        playbook="launch-ami-builder.yml",
+        private_key_file=kwargs['private_key_file'],
+        run_data=extra_vars,
+        verbosity=verbosity,
+        callback=CallbackModule(verbosity, failed_hosts))
+    success = False
+    try:
+        success = Runner(**playbook_args).run()
+    except Exception as e:
+        if verbosity > 0:
+            click.echo(e)
+        click.echo("Unexpected error, destroying instance...")
+        terminate_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+        sys.exit(1)
+    if not success:
+        # If the local playbook fails, the only failed host must be localhost.
+        assert failed_hosts
+        click.echo("Failed to initialize EC2 instance, destroying instance...")
+        try:
+            terminate_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+        except:
+            pass # best-effort
+        sys.exit(1)
+
+    # run remote playbook to provision EC2 instances
+    click.echo("Provisioning AMI builder instance...")
+    retries = 0
+    retry_hosts_pattern = None
+    # TODO: exponential backoff for unreachable hosts?
+    while True:
+        retry_hosts = set()
+        playbook_args.update(hostnames=INVENTORY_SCRIPT_PATH, playbook="remote.yml", tags=['provision'],
+            callback=CallbackModule(verbosity, retry_hosts), subset_pattern=retry_hosts_pattern)
+        try:
+            success = Runner(**playbook_args).run()
+        except Exception as e:
+            if verbosity > 0:
+                click.echo(e)
+            click.echo("Unexpected error, destroying instance...")
+            terminate_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+            sys.exit(1)
+        if not success:
+            assert retry_hosts
+            if retries < MAX_RETRIES:
+                retries += 1
+                retry_hosts_pattern = ",".join(retry_hosts)
+                click.echo("Retrying playbook run on hosts %s (%d of %d)" % (retry_hosts_pattern, retries, MAX_RETRIES))
+            else:
+                click.echo("Maximum retries (%d) exceeded, destroying cluster..." % MAX_RETRIES)
+                terminate_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+                sys.exit(1)
+        else:
+            break
+
+    click.echo("Bundling image...")
+    try:
+        image_ids_by_region = {}
+        group = get_security_group_for_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+        instance_id = group.instances()[0].id
+        ec2 = boto.ec2.connect_to_region(kwargs['region'])
+        ami_id = ec2.create_image(instance_id=instance_id, name=ami_name, description=kwargs['description'])
+        image_ids_by_region[kwargs['region']] = ami_id
+        wait_until_image_available(ami_id, kwargs['region'], profile=kwargs['profile'], verbosity=verbosity)
+        click.echo("Copying image to other regions...")
+        for copy_region in kwargs['copy_to_region']:
+            ec2 = boto.ec2.connect_to_region(copy_region)
+            copy_image = ec2.copy_image(kwargs['region'], ami_id, name=ami_name, description=kwargs['description'])
+            image_ids_by_region[copy_region] = copy_image.image_id
+            wait_until_image_available(copy_image.image_id, copy_region, profile=kwargs['profile'], verbosity=verbosity)
+        click.echo("Tagging images...")
+        for region, ami_id in image_ids_by_region.iteritems():
+            ec2 = boto.ec2.connect_to_region(region)
+            image = ec2.get_image(ami_id)
+            tags = {
+                'Name': kwargs['description'],
+                'base-image': kwargs['base_ami_id'],
+                'app': "myria",
+            }
+            if iam_user:
+                tags.update('user:Name', iam_user)
+            image.add_tags(tags)
+            if not kwargs['private']:
+                # make AMI public
+                image.set_launch_permissions(group_names='all')
+    except Exception as e:
+        if verbosity > 0:
+            click.echo(e)
+        click.echo("Unexpected error, destroying instance...")
+        terminate_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+        sys.exit(1)
+
+    click.echo("Shutting down AMI builder instance...")
+    try:
+        terminate_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+    except Exception as e:
+        if verbosity > 0:
+            click.echo(e)
+        click.echo("Failed to properly shut down AMI builder instance. Please delete all instances in security group '%s'." % ami_name)
+
+    click.echo("Successfully created images in regions %s:" % ', '.join(image_ids_by_region.keys()))
+    format_str = "{: <20} {: <20}"
+    print(format_str.format('REGION', 'AMI_ID'))
+    print(format_str.format('------', '------'))
+    for region, ami_id in image_ids_by_region.iteritems():
+        print(format_str.format(region, ami_id))
 
 
 if __name__ == '__main__':
