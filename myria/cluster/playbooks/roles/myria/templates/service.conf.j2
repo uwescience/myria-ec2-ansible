@@ -21,9 +21,17 @@ script
 end script
 
 post-stop script
-    # sleep for configured interval between respawn attempts
-    goal=`initctl status $UPSTART_JOB | awk '{print $2}' | cut -d '/' -f 1`
-    if [ $goal != "stop" ]; then
+    GOAL=`initctl status $UPSTART_JOB | awk '{print $2}' | cut -d '/' -f 1`
+    if [ "$GOAL" = "stop" ]; then
+        # sometimes terminating the Driver launcher process fails to terminate the YARN application
+        . {{ soft_link_base_path }}/hadoop/env.sh
+        APP_NAME=`{{ soft_link_base_path }}/hadoop/bin/yarn application -list | awk 'FNR==3 {print $2}'`
+        APP_ID=`{{ soft_link_base_path }}/hadoop/bin/yarn application -list | awk 'FNR==3 {print $1}'`
+        if [ "$APP_NAME" = "MyriaDriver" ]; then
+            {{ soft_link_base_path }}/hadoop/bin/yarn application -kill "${APP_ID}"
+        fi
+    else
+        # sleep for configured interval between respawn attempts
         sleep $SLEEP_TIME
     fi
 end script

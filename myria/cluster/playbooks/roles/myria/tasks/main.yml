@@ -15,7 +15,7 @@
     - provision
 
 - name: Clone Myria repository
-  git: repo="{{myria_repository_url}}" dest="{{myria_path}}" version="{{myria_branch}}"
+  git: repo="{{myria_repository_url}}" dest="{{myria_path}}" version="{{myria_branch}}" update=yes force=yes
   become: yes
   become_user: "{{myria_user}}"
   tags:
@@ -28,10 +28,19 @@
   tags:
     - provision
 
+- name: Clean Myria build
+  become: yes
+  become_user: "{{myria_user}}"
+  shell: "./gradlew clean"
+  args:
+    chdir: "{{myria_path}}"
+  tags:
+    - update
+
 - name: Compile Myria
   become: yes
   become_user: "{{myria_user}}"
-  shell: "./gradlew clean shadowJar"
+  shell: "./gradlew shadowJar"
   args:
     chdir: "{{myria_path}}"
     creates: "{{myria_path}}/build/libs"

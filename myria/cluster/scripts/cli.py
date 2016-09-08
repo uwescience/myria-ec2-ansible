@@ -30,6 +30,8 @@ from ansible.executor import playbook_executor
 from ansible.utils.display import Display
 from ansible.plugins.callback import CallbackBase
 
+import jinja2
+
 from myria.cluster.playbooks import playbooks_dir
 
 from distutils.spawn import find_executable
@@ -448,14 +450,14 @@ def get_worker_public_hostnames(cluster_name, region, profile=None, vpc_id=None)
     return worker_hostnames
 
 
-def wait_for_all_workers_online(cluster_name, region, profile=None, vpc_id=None, silent=False):
+def wait_for_all_workers_online(cluster_name, region, profile=None, vpc_id=None, verbosity=0):
     coordinator_hostname = get_coordinator_public_hostname(cluster_name, region, profile=profile, vpc_id=vpc_id)
     workers_url = "http://%(host)s:%(port)d/workers" % dict(host=coordinator_hostname, port=ANSIBLE_GLOBAL_VARS['myria_rest_port'])
     while True:
         try:
             workers_resp = requests.get(workers_url)
         except requests.ConnectionError:
-            if not silent:
+            if verbosity > 0:
                 click.echo("Myria service unavailable, waiting 60 seconds...")
         else:
             if workers_resp.status_code == requests.codes.ok:
@@ -465,7 +467,7 @@ def wait_for_all_workers_online(cluster_name, region, profile=None, vpc_id=None,
                 if len(workers_alive) == len(workers):
                     break
                 else:
-                    if not silent:
+                    if verbosity > 0:
                         click.echo("Not all Myria workers online (%d/%d), waiting 60 seconds..." % (
                             len(workers_alive), len(workers)))
             else:
@@ -539,9 +541,9 @@ http://boto3.readthedocs.io/en/latest/guide/configuration.html
 """.format(region=region, profile=profile if profile else "default"))
         sys.exit(1)
 
-    # abort if vpc_id is not supplied and no default VPC exists
+    vpc_conn = boto.vpc.connect_to_region(region, profile_name=profile)
+    # abort if VPC is not specified and no default VPC exists
     if not vpc_id:
-        vpc_conn = boto.vpc.connect_to_region(region, profile_name=profile)
         default_vpcs = vpc_conn.get_all_vpcs(filters={'isDefault': "true"})
         if not default_vpcs:
             click.echo("""
@@ -549,6 +551,16 @@ No default VPC is configured for your AWS account in the '{region}' region.
 Please ask your administrator to create a default VPC or specify a VPC subnet using the `--subnet-id` option.
 """.format(region=region))
             sys.exit(1)
+    else:
+        # verify that specified VPC exists
+        try:
+            vpc_conn.get_all_vpcs(vpc_ids=[vpc_id])
+        except EC2ResponseError as e:
+            if e.error_code == "InvalidVpcID.NotFound":
+                click.echo("""
+No VPC found with ID '{vpc_id}' in the '{region}' region.
+""".format(region=region, vpc_id=vpc_id))
+                sys.exit(1)
 
 
 def validate_region(ctx, param, value):
@@ -572,13 +584,14 @@ def get_iam_user(region, profile=None, verbosity=0):
     return iam_user
 
 
-# If this is called with local=False then EC2_INI_PATH must be set to a valid instance of the template myria/cluster/playbooks/ec2.ini.j2
-def run_playbook(playbook, private_key_file, local=True, extra_vars={}, tags=[], max_retries=MAX_RETRIES, verbosity=0):
+# If this is called with `local=False`, then the environment variable `EC2_INI_PATH`
+# must be set to a valid instance of the template `myria/cluster/playbooks/ec2.ini.j2`.
+def run_playbook(playbook, private_key_file, local=True, extra_vars={}, tags=[], max_retries=MAX_RETRIES, destroy_cluster_on_failure=True, verbosity=0):
     extra_vars.update(ansible_python_interpreter='/usr/bin/env python')
     cluster_name = extra_vars['CLUSTER_NAME']
     region = extra_vars['REGION']
-    profile = extra_vars['PROFILE']
-    vpc_id = extra_vars['VPC_ID']
+    profile = extra_vars.get('PROFILE')
+    vpc_id = extra_vars.get('VPC_ID')
     playbook_args = dict(
         hostnames=['localhost'] if local else INVENTORY_SCRIPT_PATH,
         playbook=playbook,
@@ -598,8 +611,11 @@ def run_playbook(playbook, private_key_file, local=True, extra_vars={}, tags=[],
         except Exception as e:
             if verbosity > 0:
                 click.echo(e)
-            click.echo("Unexpected error, destroying cluster...")
-            terminate_cluster(cluster_name, region=region, profile=profile, vpc_id=vpc_id)
+            if destroy_cluster_on_failure:
+                click.echo("Unexpected error, destroying cluster...")
+                terminate_cluster(cluster_name, region=region, profile=profile, vpc_id=vpc_id)
+            else:
+                click.echo("Unexpected error, exiting...")
             sys.exit(1)
         if not success:
             assert retry_hosts
@@ -608,8 +624,11 @@ def run_playbook(playbook, private_key_file, local=True, extra_vars={}, tags=[],
                 retry_hosts_pattern = ",".join(retry_hosts)
                 click.echo("Retrying playbook run on hosts %s (%d of %d)" % (retry_hosts_pattern, retries, MAX_RETRIES))
             else:
-                click.echo("Maximum retries (%d) exceeded, destroying cluster..." % MAX_RETRIES)
-                terminate_cluster(cluster_name, region=region, profile=profile, vpc_id=vpc_id)
+                if destroy_cluster_on_failure:
+                    click.echo("Maximum retries (%d) exceeded, destroying cluster..." % MAX_RETRIES)
+                    terminate_cluster(cluster_name, region=region, profile=profile, vpc_id=vpc_id)
+                else:
+                    click.echo("Maximum retries (%d) exceeded, exiting..." % MAX_RETRIES)
                 sys.exit(1)
         else:
             break
@@ -670,7 +689,7 @@ def run():
     type=click.Choice(['OFF', 'FATAL', 'ERROR', 'WARN', 'DEBUG', 'TRACE', 'ALL']), default=DEFAULTS['cluster_log_level'])
 def create_cluster(cluster_name, **kwargs):
     verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
-    ec2_ini_tmpfile = NamedTemporaryFile(delete=True)
+    ec2_ini_tmpfile = NamedTemporaryFile(delete=False)
     os.environ['EC2_INI_PATH'] = ec2_ini_tmpfile.name
     vpc_id = kwargs.get('vpc_id')
     iam_user = get_iam_user(kwargs['region'], profile=kwargs['profile'], verbosity=verbosity)
@@ -715,7 +734,6 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
     extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None)
     extra_vars.update(CLUSTER_NAME=cluster_name)
     extra_vars.update(VPC_ID=vpc_id)
-    extra_vars.update(USER=USER)
     extra_vars.update(EC2_INI_PATH=ec2_ini_tmpfile.name)
     if iam_user:
         extra_vars.update(IAM_USER=iam_user)
@@ -749,7 +767,7 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
 
     # wait for all workers to become available
     if not wait_for_all_workers_online(cluster_name, kwargs['region'], profile=kwargs['profile'],
-            vpc_id=vpc_id, silent=(verbosity==0)):
+            vpc_id=vpc_id, verbosity=verbosity):
         print("""
 The Myria service on your cluster '{cluster_name}' in the AWS '{region}' region returned an error.
 Please refer to the error message above for diagnosis. Exiting (not destroying cluster).
@@ -827,9 +845,10 @@ def destroy_cluster(cluster_name, **kwargs):
 @click.option('--vpc-id', default=None,
     help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
 def stop_cluster(cluster_name, **kwargs):
+    verbosity = 0 if kwargs['silent'] else 1
     group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
     instance_ids = [instance.id for instance in group.instances()]
-    if not kwargs['silent']:
+    if verbosity > 0:
         click.echo("Stopping instances %s" % ', '.join(instance_ids))
     ec2 = boto.ec2.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
     ec2.stop_instances(instance_ids=instance_ids)
@@ -867,9 +886,10 @@ You can start this cluster again by running
 @click.option('--vpc-id', default=None,
     help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
 def start_cluster(cluster_name, **kwargs):
+    verbosity = 0 if kwargs['silent'] else 1
     group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
     instance_ids = [instance.id for instance in group.instances()]
-    if not kwargs['silent']:
+    if verbosity > 0:
         click.echo("Starting instances %s" % ', '.join(instance_ids))
     ec2 = boto.ec2.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
     ec2.start_instances(instance_ids=instance_ids)
@@ -885,7 +905,7 @@ def start_cluster(cluster_name, **kwargs):
             break
 
     if not wait_for_all_workers_online(cluster_name, kwargs['region'], profile=kwargs['profile'],
-            vpc_id=kwargs['vpc_id'], verbosity=kwargs['silent']):
+            vpc_id=kwargs['vpc_id'], verbosity=verbosity):
         print("""
 The Myria service on your cluster '{cluster_name}' in the AWS '{region}' region returned an error.
 Please refer to the error message above for diagnosis.
@@ -910,6 +930,58 @@ New public hostname of coordinator:
 {coordinator_public_hostname}
 """.format(script_name=SCRIPT_NAME, cluster_name=cluster_name, region=kwargs['region'], options=options_str,
     coordinator_public_hostname=coordinator_public_hostname))
+
+
+@run.command('update')
+@click.argument('cluster_name')
+@click.option('--silent', is_flag=True)
+@click.option('--verbose', is_flag=True)
+@click.option('--profile', default=None,
+    help="Boto profile used to launch your cluster")
+@click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
+    help="AWS region your cluster was launched in")
+@click.option('--vpc-id', default=None,
+    help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
+@click.option('--key-pair', show_default=True, default=DEFAULTS['key_pair'],
+    help="EC2 key pair used to launch AMI builder instance")
+@click.option('--private-key-file', callback=default_key_file_from_key_pair,
+    help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
+def update_cluster(cluster_name, **kwargs):
+    verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
+    ec2_ini_tmpfile = NamedTemporaryFile(delete=False)
+    os.environ['EC2_INI_PATH'] = ec2_ini_tmpfile.name
+
+    validate_aws_settings(kwargs['region'], kwargs['profile'], kwargs['vpc_id'], verbosity=verbosity)
+    try:
+        get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+    except ValueError:
+        click.echo("No cluster with name '%s' exists in region '%s'." % (cluster_name, kwargs['region']))
+        sys.exit(1)
+
+    extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None)
+    extra_vars.update(CLUSTER_NAME=cluster_name)
+
+    if verbosity > 1:
+        for k, v in extra_vars.iteritems():
+            click.echo("%s: %s" % (k, v))
+
+    # generate Ansible EC2 dynamic inventory file
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader(playbooks_dir))
+    template = env.get_template("ec2.ini.j2")
+    template_args = dict(REGION=kwargs['region'], CLUSTER_NAME=cluster_name)
+    # We can't pass in None for a missing profile or the template won't behave correctly.
+    if kwargs.get('profile'):
+        template_args.update(PROFILE=kwargs['profile'])
+    ec2_ini_tmpfile.write(template.render(template_args))
+    # THIS IS CRITICAL (ec2.py won't see full file contents otherwise)
+    ec2_ini_tmpfile.flush()
+
+    # run remote playbook to update software on EC2 instances
+    click.echo("Updating Myria software on coordinator...")
+    run_playbook("remote.yml", kwargs['private_key_file'], local=False,extra_vars=extra_vars,
+        tags=['update'], destroy_cluster_on_failure=False, verbosity=verbosity)
+
+    click.echo("Myria software successfully updated.")
 
 
 def validate_list_options(ctx, param, value):
@@ -1132,7 +1204,6 @@ instance_str + """delete security group '{ami_name}' (ID: {group_id}) from the A
     extra_vars.update(AMI_NAME=ami_name)
     extra_vars.update(CLUSTER_NAME=ami_name)
     extra_vars.update(VPC_ID=vpc_id)
-    extra_vars.update(USER=USER)
     extra_vars.update(EC2_INI_PATH=ec2_ini_tmpfile.name)
     if iam_user:
         extra_vars.update(IAM_USER=iam_user)
