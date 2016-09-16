@@ -43,6 +43,9 @@ hadoop_password: $6$rounds=40000$1qjG/hovLZOkcerH$CK4Or3w8rR3KabccowciZZUeD.nIwR
 
 hadoop_version: 2.7.2
 
+resourcemanager_web_port: 8088
+nodemanager_web_port: 8042
+
 routing_network_interface: eth1
 ansible_routing_network_interface: ansible_eth1
 

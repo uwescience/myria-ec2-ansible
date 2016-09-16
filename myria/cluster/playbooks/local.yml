@@ -71,12 +71,12 @@
         to_port: "{{jupyter_web_port}}"
         cidr_ip: 0.0.0.0/0
       - proto: tcp
-        from_port: 8088
-        to_port: 8088
+        from_port: {{resourcemanager_web_port}}
+        to_port: {{resourcemanager_web_port}}
         cidr_ip: 0.0.0.0/0
       - proto: tcp
-        from_port: 8042
-        to_port: 8042
+        from_port: {{nodemanager_web_port}}
+        to_port: {{nodemanager_web_port}}
         cidr_ip: 0.0.0.0/0
       rules_egress:
       - proto: all
