@@ -4,13 +4,24 @@
   tags:
     - configure
 
-- name: Format attached EBS data volume
-  filesystem: fstype={{ data_vol_fs_type }} dev={{ data_vol_real_device_name }}
+- name: Unmount first data volume if it is pre-mounted (and remove fstab entries via state=absent rather than state=unmounted)
+  mount: name="{{ legacy_mount_point }}" src="{{ all_volumes[0].device_name }}" fstype={{ data_vol_fs_type }} state=absent
+  register: unmount_result
   tags:
     - configure
 
-- name: Mount attached EBS data volume
-  mount: name={{ data_vol_mount_dir }} src={{ data_vol_real_device_name }} fstype={{ data_vol_fs_type }} opts=rw,noatime state=mounted
+# tolerate failures because volume is already mounted
+- name: Format all data volumes
+  filesystem: fstype={{ data_vol_fs_type }} dev={{ item.device_name }} force=yes
+  register: result
+  failed_when: "(result | failed) and ('is mounted' not in result.err)"
+  with_items: "{{ all_volumes }}"
+  tags:
+    - configure
+
+- name: Mount all data volumes
+  mount: name="{{ mount_dir_root }}/data{{ item.0+1 }}" src="{{ item.1.device_name }}" fstype={{ data_vol_fs_type }} opts=rw,noatime state=mounted
+  with_indexed_items: "{{ all_volumes }}"
   tags:
     - configure
 

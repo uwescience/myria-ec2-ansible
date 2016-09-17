@@ -2,13 +2,72 @@
 # Install Variables
 # --------------------------------------
 
-data_vol_device_name: /dev/sdb
-data_vol_storage_type: gp2
 data_vol_fs_type: ext4
-data_vol_mount_dir: /mnt
+ebs_data_vol_device_name: /dev/xvdb
+ebs_data_vol_storage_type: gp2
+ebs_data_vol_volume_size: 20
+mount_dir_root: /
+default_data_vol_mount_dir: "{{ mount_dir_root }}/data1"
 install_base_path: /usr/local
 soft_link_base_path: /opt
 remote_user: ubuntu
+
+# --------------------------------------
+# Storage Variables
+# --------------------------------------
+
+all_volumes: "{{ (STORAGE_TYPE == 'ebs') | ternary(ebs_volumes, (ephemeral_volumes_by_instance_type[INSTANCE_TYPE] | default([]))) }}"
+
+ebs_volumes:
+- device_name: "{{ ebs_data_vol_device_name }}"
+  volume_size: "{{ DATA_VOLUME_SIZE_GB | default(ebs_data_vol_volume_size) }}"
+  volume_type: "{{ ebs_data_vol_storage_type }}"
+  delete_on_termination: true
+
+ephemeral_volumes: "{{ (ephemeral_volumes_by_instance_type[INSTANCE_TYPE] | default([])) }}"
+
+one_ephemeral:
+  - { device_name: /dev/xvdb, ephemeral: ephemeral0 }
+two_ephemeral:
+  - { device_name: /dev/xvdb, ephemeral: ephemeral0 }
+  - { device_name: /dev/xvdc, ephemeral: ephemeral1 }
+three_ephemeral:
+  - { device_name: /dev/xvdb, ephemeral: ephemeral0 }
+  - { device_name: /dev/xvdc, ephemeral: ephemeral1 }
+  - { device_name: /dev/xvdd, ephemeral: ephemeral2 }
+four_ephemeral:
+  - { device_name: /dev/xvdb, ephemeral: ephemeral0 }
+  - { device_name: /dev/xvdc, ephemeral: ephemeral1 }
+  - { device_name: /dev/xvdd, ephemeral: ephemeral2 }
+  - { device_name: /dev/xvde, ephemeral: ephemeral3 }
+
+ephemeral_volumes_by_instance_type:
+  c1.medium: "{{ one_ephemeral }}"
+  c1.xlarge: "{{ four_ephemeral }}"
+  c3.large: "{{ two_ephemeral }}"
+  c3.xlarge: "{{ two_ephemeral }}"
+  c3.2xlarge: "{{ two_ephemeral }}"
+  c3.4xlarge: "{{ two_ephemeral }}"
+  c3.8xlarge: "{{ two_ephemeral }}"
+  i2.xlarge: "{{ one_ephemeral }}"
+  i2.2xlarge: "{{ two_ephemeral }}"
+  i2.4xlarge: "{{ four_ephemeral }}"
+  m1.small: "{{ one_ephemeral }}"
+  m1.medium: "{{ one_ephemeral }}"
+  m1.large: "{{ two_ephemeral }}"
+  m1.xlarge: "{{ four_ephemeral }}"
+  m2.xlarge: "{{ one_ephemeral }}"
+  m2.2xlarge: "{{ one_ephemeral }}"
+  m2.4xlarge: "{{ two_ephemeral }}"
+  m3.medium: "{{ one_ephemeral }}"
+  m3.large: "{{ one_ephemeral }}"
+  m3.xlarge: "{{ two_ephemeral }}"
+  m3.2xlarge: "{{ two_ephemeral }}"
+  r3.large: "{{ one_ephemeral }}"
+  r3.xlarge: "{{ one_ephemeral }}"
+  r3.2xlarge: "{{ one_ephemeral }}"
+  r3.4xlarge: "{{ one_ephemeral }}"
+  r3.8xlarge: "{{ two_ephemeral }}"
 
 # --------------------------------------
 # ZK VARIABLES

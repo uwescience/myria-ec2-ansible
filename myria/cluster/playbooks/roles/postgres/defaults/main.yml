@@ -4,11 +4,12 @@ database_name: myria
 database_username: uwdb # Myria currently requires a postgres user named 'uwdb'
 database_password: uwdb # TODO: Fix me :(
 postgres_version: 9.4
-postgres_default_data_dir: '/var/lib/postgresql/9.4/main'
+postgres_legacy_data_dir: '/var/lib/postgresql/9.4/main'
 postgres_locale: 'en_US.UTF-8'
 postgres_encoding: 'UTF-8'
 postgres_cluster_name: myria
-postgres_data_root: '{{data_vol_mount_dir}}/postgresql'
+postgres_legacy_cluster_name: main
+postgres_data_root: '{{mount_dir_root}}/data1/postgresql'
 postgres_data_dir: '{{postgres_data_root}}/{{postgres_version}}/{{postgres_cluster_name}}'
 shared_buffers_mb: 512
 work_mem_mb: 128

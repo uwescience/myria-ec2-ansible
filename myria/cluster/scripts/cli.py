@@ -44,7 +44,7 @@ SCRIPT_NAME =  os.path.basename(sys.argv[0])
 INVENTORY_SCRIPT_PATH = find_executable("ec2.py")
 ANSIBLE_GLOBAL_VARS_PATH = os.path.join(playbooks_dir, "group_vars/all")
 MAX_CONCURRENT_TASKS = 20 # more than this can trigger "too many open files" on Mac
-MAX_RETRIES = 5
+MAX_RETRIES_DEFAULT = 5
 
 USER = os.getenv('USER')
 HOME = os.getenv('HOME')
@@ -65,24 +65,6 @@ ALL_REGIONS = [
     'ap-south-1',
     'sa-east-1'
 ]
-
-DEFAULTS = dict(
-    key_pair="%s-myria" % USER,
-    region='us-west-2',
-    instance_type='t2.large',
-    cluster_size=5,
-    data_volume_size_gb=20,
-    driver_mem_gb=0.5,
-    coordinator_mem_gb=5.5,
-    worker_mem_gb=5.5,
-    heap_mem_fraction=0.9,
-    coordinator_vcores=1,
-    worker_vcores=1,
-    node_mem_gb=6.0,
-    node_vcores=2,
-    workers_per_node=1,
-    cluster_log_level='WARN'
-)
 
 # these mappings are taken from http://uec-images.ubuntu.com/query/trusty/server/released.txt
 
@@ -146,9 +128,28 @@ DEFAULT_PROVISIONED_PV_AMI_IDS = {
 assert set(DEFAULT_PROVISIONED_PV_AMI_IDS.keys()).issubset(set(ALL_REGIONS))
 
 PV_INSTANCE_TYPE_FAMILIES = ['c1', 'hi1', 'hs1', 'm1', 'm2', 't1']
+LOCAL_STORAGE_INSTANCE_TYPE_FAMILIES = ['m1', 'm2', 'm3', 'c1', 'c3', 'r3', 'i2']
 
 ANSIBLE_GLOBAL_VARS = yaml.load(file(ANSIBLE_GLOBAL_VARS_PATH, 'r'))
 
+DEFAULTS = dict(
+    key_pair="%s-myria" % USER,
+    region='us-west-2',
+    instance_type='t2.large',
+    cluster_size=5,
+    storage_type='ebs',
+    data_volume_size_gb=ANSIBLE_GLOBAL_VARS['ebs_data_vol_volume_size'],
+    driver_mem_gb=0.5,
+    coordinator_mem_gb=5.5,
+    worker_mem_gb=5.5,
+    heap_mem_fraction=0.9,
+    coordinator_vcores=1,
+    worker_vcores=1,
+    node_mem_gb=6.0,
+    node_vcores=2,
+    workers_per_node=1,
+    cluster_log_level='WARN'
+)
 
 class Options(object):
     """
@@ -478,6 +479,10 @@ def wait_for_all_workers_online(cluster_name, region, profile=None, vpc_id=None,
     return True
 
 
+def instance_type_family_from_instance_type(instance_type):
+    return instance_type.split('.')[0]
+
+
 def default_key_file_from_key_pair(ctx, param, value):
     if value is None:
         qualified_key_pair = "%s_%s" % (ctx.params['key_pair'], ctx.params['region'])
@@ -492,7 +497,7 @@ def default_ami_id_from_region(ctx, param, value):
     if value is None:
         ami_id = None
         use_stock_ami = ctx.params['unprovisioned']
-        instance_type_family = ctx.params['instance_type'].split('.')[0]
+        instance_type_family = instance_type_family_from_instance_type(ctx.params['instance_type'])
         if instance_type_family in PV_INSTANCE_TYPE_FAMILIES:
             ami_id = DEFAULT_STOCK_PV_AMI_IDS.get(ctx.params['region']) if use_stock_ami else DEFAULT_PROVISIONED_PV_AMI_IDS.get(ctx.params['region'])
         else:
@@ -570,6 +575,23 @@ def validate_region(ctx, param, value):
     return value
 
 
+def validate_volume_size(ctx, param, value):
+    if value is not None:
+        if ctx.params.get('storage_type') == "local":
+            raise click.BadParameter("Cannot specify volume size with --storage-type=local")
+    elif ctx.params.get('storage_type') == "ebs":
+        return DEFAULTS['data_volume_size_gb']
+    return value
+
+
+def validate_storage_type(ctx, param, value):
+    if value == "local":
+        instance_type_family = instance_type_family_from_instance_type(ctx.params['instance_type'])
+        if instance_type_family not in LOCAL_STORAGE_INSTANCE_TYPE_FAMILIES:
+            raise click.BadParameter("Instance type %s is incompatible with local storage" % ctx.params['instance_type'])
+    return value
+
+
 def get_iam_user(region, profile=None, verbosity=0):
     # extract IAM user name for resource tagging
     iam_conn = boto.iam.connect_to_region(region, profile_name=profile)
@@ -586,7 +608,7 @@ def get_iam_user(region, profile=None, verbosity=0):
 
 # If this is called with `local=False`, then the environment variable `EC2_INI_PATH`
 # must be set to a valid instance of the template `myria/cluster/playbooks/ec2.ini.j2`.
-def run_playbook(playbook, private_key_file, local=True, extra_vars={}, tags=[], max_retries=MAX_RETRIES, destroy_cluster_on_failure=True, verbosity=0):
+def run_playbook(playbook, private_key_file, local=True, extra_vars={}, tags=[], max_retries=MAX_RETRIES_DEFAULT, destroy_cluster_on_failure=True, verbosity=0):
     extra_vars.update(ansible_python_interpreter='/usr/bin/env python')
     cluster_name = extra_vars['CLUSTER_NAME']
     region = extra_vars['REGION']
@@ -622,13 +644,13 @@ def run_playbook(playbook, private_key_file, local=True, extra_vars={}, tags=[],
             if retries < max_retries:
                 retries += 1
                 retry_hosts_pattern = ",".join(retry_hosts)
-                click.echo("Retrying playbook run on hosts %s (%d of %d)" % (retry_hosts_pattern, retries, MAX_RETRIES))
+                click.echo("Retrying playbook run on hosts %s (%d of %d)" % (retry_hosts_pattern, retries, max_retries))
             else:
                 if destroy_cluster_on_failure:
-                    click.echo("Maximum retries (%d) exceeded, destroying cluster..." % MAX_RETRIES)
+                    click.echo("Maximum retries (%d) exceeded, destroying cluster..." % max_retries)
                     terminate_cluster(cluster_name, region=region, profile=profile, vpc_id=vpc_id)
                 else:
-                    click.echo("Maximum retries (%d) exceeded, exiting..." % MAX_RETRIES)
+                    click.echo("Maximum retries (%d) exceeded, exiting..." % max_retries)
                 sys.exit(1)
         else:
             break
@@ -665,8 +687,10 @@ def run():
     help="ID of the VPC subnet in which to launch your EC2 instances")
 @click.option('--role', help="Name of an IAM role used to launch your EC2 instances")
 @click.option('--spot-price', help="Price in dollars of the maximum bid for an EC2 spot instance request")
-@click.option('--data-volume-size-gb', show_default=True, default=DEFAULTS['data_volume_size_gb'],
-    help="Size of each instance's EBS data volume (used by Hadoop and PostgreSQL) in GB")
+@click.option('--storage-type', show_default=True, callback=validate_storage_type,
+    type=click.Choice(['ebs', 'local']), default=DEFAULTS['storage_type'])
+@click.option('--data-volume-size-gb', callback=validate_volume_size,
+    help="Size of each instance's EBS data volume (used by Hadoop and PostgreSQL) in GB [default: %s]" % DEFAULTS['data_volume_size_gb'])
 @click.option('--driver-mem-gb', show_default=True, default=DEFAULTS['driver_mem_gb'],
     help="Physical memory (in GB) reserved for Myria driver")
 @click.option('--coordinator-mem-gb', show_default=True, default=DEFAULTS['coordinator_mem_gb'],
@@ -759,6 +783,8 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
                 break
         else:
             break
+
+    click.echo("All instances running...")
 
     # run remote playbook to provision EC2 instances
     all_provisioned_ami_ids = DEFAULT_PROVISIONED_HVM_AMI_IDS.values() + DEFAULT_PROVISIONED_PV_AMI_IDS.values()
@@ -978,7 +1004,7 @@ def update_cluster(cluster_name, **kwargs):
 
     # run remote playbook to update software on EC2 instances
     click.echo("Updating Myria software on coordinator...")
-    run_playbook("remote.yml", kwargs['private_key_file'], local=False,extra_vars=extra_vars,
+    run_playbook("remote.yml", kwargs['private_key_file'], local=False, extra_vars=extra_vars,
         tags=['update'], destroy_cluster_on_failure=False, verbosity=verbosity)
 
     click.echo("Myria software successfully updated.")
@@ -1043,7 +1069,7 @@ def list_cluster(cluster_name, **kwargs):
 def default_base_ami_id_from_region(ctx, param, value):
     if value is None:
         ami_id = None
-        instance_type_family = ctx.params['instance_type'].split('.')[0]
+        instance_type_family = instance_type_family_from_instance_type(ctx.params['instance_type'])
         if instance_type_family in PV_INSTANCE_TYPE_FAMILIES:
             ami_id = DEFAULT_STOCK_PV_AMI_IDS.get(ctx.params['region'])
         else:
@@ -1064,12 +1090,12 @@ def validate_virt_type(ctx, param, value):
         if ctx.params.get('explicit_base_ami_id'):
             raise click.BadParameter("Cannot specify --%s if --base-ami-id is specified" % value)
         if value == 'hvm':
-            instance_type_family = ctx.params['instance_type'].split('.')[0]
+            instance_type_family = instance_type_family_from_instance_type(ctx.params['instance_type'])
             if instance_type_family in PV_INSTANCE_TYPE_FAMILIES:
                 raise click.BadParameter("Instance type %s is incompatible with HVM virtualization" % ctx.params['instance_type'])
             ctx.params['base_ami_id'] = DEFAULT_STOCK_HVM_AMI_IDS[ctx.params['region']]
         elif value == 'pv':
-            instance_type_family = ctx.params['instance_type'].split('.')[0]
+            instance_type_family = instance_type_family_from_instance_type(ctx.params['instance_type'])
             if instance_type_family not in PV_INSTANCE_TYPE_FAMILIES:
                 raise click.BadParameter("Instance type %s is incompatible with PV virtualization" % ctx.params['instance_type'])
             ctx.params['base_ami_id'] = DEFAULT_STOCK_PV_AMI_IDS[ctx.params['region']]

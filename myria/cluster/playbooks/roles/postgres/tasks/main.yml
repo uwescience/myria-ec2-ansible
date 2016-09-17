@@ -31,15 +31,15 @@
     - provision
 
 - name: reset the cluster - drop the existing one
-  shell: "pg_dropcluster --stop {{ postgres_version }} main"
+  shell: "pg_dropcluster --stop {{ postgres_version }} {{ postgres_legacy_cluster_name }}"
   args:
-    removes: "{{ postgres_default_data_dir }}"
+    removes: "{{ postgres_legacy_data_dir }}"
   notify: restart postgresql
   tags:
     - configure
 
 - name: reset the cluster - create a new one (with specified encoding and locale)
-  shell: 'pg_createcluster --start --user=postgres --group=postgres --locale {{ postgres_locale }} -e {{ postgres_encoding }} -d {{ postgres_data_dir }} {{ postgres_version }} {{ postgres_cluster_name }}'
+  command: 'pg_createcluster --start --user=postgres --group=postgres --locale {{ postgres_locale }} -e {{ postgres_encoding }} -d {{ postgres_data_dir }} {{ postgres_version }} {{ postgres_cluster_name }}'
   args:
     creates: "{{ postgres_data_dir }}"
   notify: restart postgresql
@@ -57,7 +57,7 @@
 
 - name: altering pg_hba.conf - adding listeners
   lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/pg_hba.conf
-              line="host    all   all        0.0.0.0/0   md5"
+              line="host    all   all        0.0.0.0/0   trust"
               state=present
   notify: restart postgresql
   tags:
@@ -81,10 +81,38 @@
   tags:
     - configure
 
-- name: Create database instance
-  postgresql_db: name=myria_{{item}}
+- name: altering postgresql.conf - changing temp_tablespaces
+  lineinfile: dest=/etc/postgresql/{{postgres_version}}/{{postgres_cluster_name}}/postgresql.conf
+              regexp="^[#]?temp_tablespaces"
+              line="temp_tablespaces = '{% set comma = joiner(", ") %}{% for i in range((all_volumes|length)) %}{{comma()}}tblspc_{{i+1}}{% endfor %}'"
+              state=present
+  notify: restart postgresql
+  tags:
+    - configure
+
+- name: Create tablespace directories on each data volume
+  file: path={{ mount_dir_root }}/data{{item.0+1}}/postgresql/data state=directory recurse=yes mode=0755 owner='postgres' group='postgres'
+  with_indexed_items: "{{ all_volumes }}"
+  tags:
+    - configure
+
+# No Ansible module for tablespaces until https://github.com/ansible/ansible/pull/4994 is merged
+- name: Create tablespaces on each data volume
+  command: psql --username=postgres --port=5432 --dbname=postgres --command="CREATE TABLESPACE tblspc_{{item.0+1}} LOCATION '{{ mount_dir_root }}/data{{item.0+1}}/postgresql/data';"
   become: yes
   become_user: postgres
+  failed_when: "(result | failed) and ('already exists' not in result.stderr)"
+  with_indexed_items: "{{ all_volumes }}"
+  notify: restart postgresql
+  tags:
+    - configure
+
+# Can't use postgresql_db module until tablespace support (https://github.com/ansible/ansible-modules-core/pull/2220) is merged
+- name: Create databases, assigning round-robin to tablespaces
+  command: psql --username=postgres --port=5432 --dbname=postgres --command="CREATE DATABASE myria_{{item}} ENCODING '{{postgres_encoding}}' LC_COLLATE '{{postgres_locale}}' LC_CTYPE '{{postgres_locale}}' TABLESPACE tblspc_{{ ((((item|int)-1) % (WORKERS_PER_NODE|int)) % (all_volumes | length))+1 }};"
+  become: yes
+  become_user: postgres
+  failed_when: "(result | failed) and ('already exists' not in result.stderr)"
   with_items: "{{ ec2_tag_worker_id.split(',') }}"
   notify: restart postgresql
   tags:
