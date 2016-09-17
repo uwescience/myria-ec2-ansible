@@ -53,7 +53,7 @@
   become_user: "{{myria_user}}"
   shell: "TEMPFILE=$(mktemp) &&
           ./create_deployment.py {{myria_path}} {{ hostvars[groups['tag_cluster_role_coordinator'][0]]['ansible_ec2_local_hostname'] }} \
-                                                    {% for host in groups['tag_cluster_role_worker'] %} {% for i in range(WORKERS_PER_NODE) %} {{ hostvars[host]['ansible_ec2_local_hostname'] }} {% endfor %} {% endfor %} \
+                                                    {% for host in groups['tag_cluster_role_worker'] %} {% for i in range((WORKERS_PER_NODE|int)) %} {{ hostvars[host]['ansible_ec2_local_hostname'] }} {% endfor %} {% endfor %} \
                                                     --rest-port {{myria_rest_port}} \
                                                     --coordinator-port {{coordinator_port}} \
                                                     --worker-base-port {{worker_base_port}} \
@@ -64,7 +64,7 @@
                                                     --worker-memory-size-gb {{worker_mem_gb}} \
                                                     --master-cores-number {{coordinator_vcores}} \
                                                     --worker-cores-number {{worker_vcores}} \
-                                                    --worker-databases {% for i in range(WORKERS_PER_NODE * groups['tag_cluster_role_worker']|length) %} myria_{{i+1}} {% endfor %} \
+                                                    --worker-databases {% for i in range((WORKERS_PER_NODE|int) * (groups['tag_cluster_role_worker']|length)) %} myria_{{i+1}} {% endfor %} \
                                                     --persist-uri hdfs://{{hostvars[groups['tag_cluster_role_coordinator'][0]]['ansible_ec2_local_hostname']}}:{{namenode_port}}
           > ${TEMPFILE} && mv ${TEMPFILE} {{myria_path}}/myriadeploy/deployment.cfg"
   args:

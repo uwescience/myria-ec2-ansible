@@ -2,28 +2,14 @@
 # Install Variables
 # --------------------------------------
 
-data_vol_device_name: /dev/sdb
-data_vol_storage_type: gp2
 data_vol_fs_type: ext4
-data_vol_mount_dir: /mnt
+ephemeral_mount_point_prefix: /local
+ebs_mount_point_prefix: /remote
+default_data_vol_mount_dir: "{{ (STORAGE_TYPE == 'ebs') | ternary(ebs_mount_point_prefix+'1', ephemeral_mount_point_prefix+'1') }}"
+default_data_dir: /data
 install_base_path: /usr/local
 soft_link_base_path: /opt
 remote_user: ubuntu
-
-# --------------------------------------
-# ZK VARIABLES
-# --------------------------------------
-
-# Zookeeper Version.
-zookeeper_version: 3.4.7
-
-zookeeper_user: zkadmin
-zookeeper_group: zkadmin
-zookeeper_password: $6$rounds=40000$1qjG/hovLZOkcerH$CK4Or3w8rR3KabccowciZZUeD.nIwR/VINUa2uPsmGK/2xnmOt80TjDwbof9rNvnYY6icCkdAR2qrFquirBtT1
-
-# Zookeeper Storage and Logging.
-zookeeper_data_store: /mnt/data/zookeeper
-zookeeper_logging: /mnt/data/zookeeper_logging
 
 
 #----------------------------------
@@ -60,6 +46,7 @@ coordinator_vcores: "{{ COORDINATOR_VCORES | int }}"
 worker_mem_gb: "{{ WORKER_MEM_GB | float }}"
 worker_vcores: "{{ WORKER_VCORES | int }}"
 
+
 #----------------------------------
 #   Myria Variables
 #----------------------------------
@@ -70,6 +57,7 @@ myria_version: 0.1
 myria_rest_port: 8753
 myria_web_port: 8080
 
+
 #----------------------------------
 #   GAE Variables
 #----------------------------------
@@ -77,6 +65,7 @@ myria_web_port: 8080
 gae_version: 1.9.31
 gae_base_dir: /opt
 gae_dirname: google_appengine
+
 
 #----------------------------------
 #   Ganglia Variables
@@ -87,6 +76,7 @@ ganglia_web_port: 8090
 ganglia_conf_dir: /etc/ganglia
 ganglia_user: ganglia
 ganglia_group: ganglia
+
 
 #----------------------------------
 #   Jupyter Variables

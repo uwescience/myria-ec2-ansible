@@ -4,9 +4,9 @@
 hadoop_binaries_url: "http://s3-us-west-2.amazonaws.com/uwdb/myria/deploy-cache/hadoop/hadoop-{{ hadoop_version }}.tar.gz"
 hadoop_download_path: /tmp/hadoop-{{ hadoop_version }}.tar.gz
 hadoop_install_path: "{{ install_base_path }}/hadoop-{{ hadoop_version }}"
-yarn_nm_dir: '{{data_vol_mount_dir}}/nm-local'
-hdfs_namenode_data_dir: '{{data_vol_mount_dir}}/namenode'
-hdfs_datanode_data_dir: '{{data_vol_mount_dir}}/datanode'
+yarn_nm_dir: "{{default_data_dir}}/nm-local"
+hdfs_namenode_data_dir: "{{default_data_dir}}/namenode"
+hdfs_datanode_data_dir: "{{default_data_dir}}/datanode"
 hdfs_replication_factor: 2
 node_mem_gb: "{{ NODE_MEM_GB | float }}"
 node_vcores: "{{ NODE_VCORES | int }}"
@@ -14,4 +14,4 @@ node_mem_mb: "{{ (1024 * (NODE_MEM_GB | float)) | int }}"
 driver_mem_mb: "{{ (1024 * (DRIVER_MEM_GB | float)) | int }}"
 coordinator_mem_mb: "{{ (1024 * (COORDINATOR_MEM_GB | float)) | int }}"
 worker_mem_mb: "{{ (1024 * (WORKER_MEM_GB | float)) | int }}"
-hadoop_log_dir: "{{ data_vol_mount_dir }}/hadoop/logs"
+hadoop_log_dir: "{{ default_data_dir }}/hadoop/logs"
