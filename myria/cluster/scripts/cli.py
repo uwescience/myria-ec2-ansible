@@ -283,9 +283,9 @@ def launch_cluster(cluster_name, verbosity=0, **kwargs):
     # Tag security group to designate as Myria cluster
     group_tags = {'app': "myria", 'storage-type': kwargs['storage_type']}
     if kwargs['iam_user']:
-        group_tags.update('user:Name', kwargs['iam_user'])
+        group_tags.update({'user:Name': kwargs['iam_user']})
     if kwargs['spot_price']:
-        group_tags.update('spot-price', kwargs['spot_price'])
+        group_tags.update({'spot-price': kwargs['spot_price']})
     group.add_tags(group_tags)
     # Allow this group complete access to itself
     self_rules = [SecurityGroupRule(proto, 0, 65535, "0.0.0.0/0", group) for proto in ['tcp', 'udp']]
@@ -315,11 +315,15 @@ def launch_cluster(cluster_name, verbosity=0, **kwargs):
         launched_instance_ids = []
         launch_args.update(price=kwargs['spot_price'],
                            count=kwargs['cluster_size'],
-                           launch_group="launch-group-%s" % cluster_name,
-                           availability_zone_group="az-launch-group-%s" % cluster_name)
+                           launch_group="launch-group-%s" % cluster_name, # fate-sharing across instances
+                           availability_zone_group="az-launch-group-%s" % cluster_name) # launch all instances in same AZ
         spot_requests = ec2.request_spot_instances(**launch_args)
+        spot_request_ids = [req.id for req in spot_requests]
         while True:
-            for req in spot_requests:
+            # Spot request objects won't auto-update, so we need to fetch them again on each iteration.
+            for req in ec2.get_all_spot_instance_requests(request_ids=spot_request_ids):
+                print req.state
+                print req.status.code
                 if req.state != "active":
                     break
                 else:
@@ -343,9 +347,9 @@ def launch_cluster(cluster_name, verbosity=0, **kwargs):
     for idx, instance in enumerate(instances):
         instance_tags = {'app': "myria", 'cluster-name': cluster_name}
         if kwargs['iam_user']:
-            instance_tags.update('user:Name', kwargs['iam_user'])
+            instance_tags.update({'user:Name': kwargs['iam_user']})
         if kwargs['spot_price']:
-            instance_tags.update('spot-price', kwargs['spot_price'])
+            instance_tags.update({'spot-price': kwargs['spot_price']})
         instance.add_tags(instance_tags)
         # Tag volumes
         volumes = ec2.get_all_volumes(filters={'attachment.instance-id': instance.id})
@@ -851,6 +855,8 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
     except Exception as e:
         if verbosity > 0:
             click.echo(e)
+        if verbosity > 1:
+            click.echo(traceback.format_exc())
         click.echo("Unexpected error, destroying cluster...")
         terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
         sys.exit(1)
