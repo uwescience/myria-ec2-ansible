@@ -2,12 +2,19 @@
 
 import sys
 import os
+import os.path
 import signal
+import traceback
+import subprocess
 from time import sleep
 from tempfile import NamedTemporaryFile
+from tempfile import mkdtemp
 from collections import namedtuple
+from string import ascii_lowercase
+from operator import itemgetter
 import click
 import yaml
+import json
 import requests
 
 import boto
@@ -15,13 +22,15 @@ import boto.ec2
 import boto.vpc
 import boto.iam
 from boto.exception import EC2ResponseError
+from boto.ec2.blockdevicemapping import BlockDeviceType, EBSBlockDeviceType, BlockDeviceMapping
 
 # Ansible configuration variables to set before importing Ansible modules
 os.environ['ANSIBLE_SSH_ARGS'] = "-o ControlMaster=auto -o ControlPersist=60s -o UserKnownHostsFile=/dev/null"
 os.environ['ANSIBLE_RECORD_HOST_KEYS'] = "False"
 os.environ['ANSIBLE_HOST_KEY_CHECKING'] = "False"
 os.environ['ANSIBLE_SSH_PIPELINING'] = "True"
-os.environ['ANSIBLE_RETRY_FILES_ENABLED'] = "False"
+os.environ['ANSIBLE_RETRY_FILES_ENABLED'] = "True"
+os.environ['ANSIBLE_NOCOWS'] = "True"
 
 from ansible.inventory import Inventory
 from ansible.vars import VariableManager
@@ -42,12 +51,16 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 SCRIPT_NAME =  os.path.basename(sys.argv[0])
 # this is necessary because pip loses executable permissions and ansible requires scripts to be executable
 INVENTORY_SCRIPT_PATH = find_executable("ec2.py")
-ANSIBLE_GLOBAL_VARS_PATH = os.path.join(playbooks_dir, "group_vars/all")
+# we want to use only the Ansible executable in our dependent package
+ANSIBLE_EXECUTABLE_PATH = find_executable("ansible-playbook")
+
+ANSIBLE_GLOBAL_VARS = yaml.load(file(os.path.join(playbooks_dir, "group_vars/all"), 'r'))
 MAX_CONCURRENT_TASKS = 20 # more than this can trigger "too many open files" on Mac
 MAX_RETRIES_DEFAULT = 5
 
 USER = os.getenv('USER')
 HOME = os.getenv('HOME')
+
 
 # valid log4j log levels (https://logging.apache.org/log4j/1.2/apidocs/org/apache/log4j/Level.html)
 LOG_LEVELS = ['OFF', 'FATAL', 'ERROR', 'WARN', 'DEBUG', 'TRACE', 'ALL']
@@ -127,10 +140,59 @@ DEFAULT_PROVISIONED_PV_AMI_IDS = {
 }
 assert set(DEFAULT_PROVISIONED_PV_AMI_IDS.keys()).issubset(set(ALL_REGIONS))
 
+DEVICE_PATH_PREFIX = "/dev/xvd"
 PV_INSTANCE_TYPE_FAMILIES = ['c1', 'hi1', 'hs1', 'm1', 'm2', 't1']
 LOCAL_STORAGE_INSTANCE_TYPE_FAMILIES = ['m1', 'm2', 'm3', 'c1', 'c3', 'r3', 'i2']
+EPHEMERAL_VOLUMES_BY_INSTANCE_TYPE = {
+  'c1.medium': 1,
+  'c1.xlarge': 4,
+  'c3.large': 2,
+  'c3.xlarge': 2,
+  'c3.2xlarge': 2,
+  'c3.4xlarge': 2,
+  'c3.8xlarge': 2,
+  'i2.xlarge': 1,
+  'i2.2xlarge': 2,
+  'i2.4xlarge': 4,
+  'm1.small': 1,
+  'm1.medium': 1,
+  'm1.large': 2,
+  'm1.xlarge': 4,
+  'm2.xlarge': 1,
+  'm2.2xlarge': 1,
+  'm2.4xlarge': 2,
+  'm3.medium': 1,
+  'm3.large': 1,
+  'm3.xlarge': 2,
+  'm3.2xlarge': 2,
+  'r3.large': 1,
+  'r3.xlarge': 1,
+  'r3.2xlarge': 1,
+  'r3.4xlarge': 1,
+  'r3.8xlarge': 2,
+}
 
-ANSIBLE_GLOBAL_VARS = yaml.load(file(ANSIBLE_GLOBAL_VARS_PATH, 'r'))
+SecurityGroupRule = namedtuple("SecurityGroupRule", ["ip_protocol", "from_port", "to_port", "cidr_ip", "src_group"])
+ssh_port = 22
+http_port = 80
+https_port = 443
+myria_rest_port = ANSIBLE_GLOBAL_VARS['myria_rest_port']
+myria_web_port = ANSIBLE_GLOBAL_VARS['myria_web_port']
+ganglia_web_port = ANSIBLE_GLOBAL_VARS['ganglia_web_port']
+jupyter_web_port = ANSIBLE_GLOBAL_VARS['jupyter_web_port']
+resourcemanager_web_port = ANSIBLE_GLOBAL_VARS['resourcemanager_web_port']
+nodemanager_web_port = ANSIBLE_GLOBAL_VARS['nodemanager_web_port']
+SECURITY_GROUP_RULES = [
+    SecurityGroupRule("tcp", ssh_port, ssh_port, "0.0.0.0/0", None),
+    SecurityGroupRule("tcp", http_port, http_port, "0.0.0.0/0", None),
+    SecurityGroupRule("tcp", https_port, https_port, "0.0.0.0/0", None),
+    SecurityGroupRule("tcp", myria_rest_port, myria_rest_port, "0.0.0.0/0", None),
+    SecurityGroupRule("tcp", myria_web_port, myria_web_port, "0.0.0.0/0", None),
+    SecurityGroupRule("tcp", ganglia_web_port, ganglia_web_port, "0.0.0.0/0", None),
+    SecurityGroupRule("tcp", jupyter_web_port, jupyter_web_port, "0.0.0.0/0", None),
+    SecurityGroupRule("tcp", resourcemanager_web_port, resourcemanager_web_port, "0.0.0.0/0", None),
+    SecurityGroupRule("tcp", nodemanager_web_port, nodemanager_web_port, "0.0.0.0/0", None),
+]
 
 DEFAULTS = dict(
     key_pair="%s-myria" % USER,
@@ -138,7 +200,9 @@ DEFAULTS = dict(
     instance_type='t2.large',
     cluster_size=5,
     storage_type='ebs',
-    data_volume_size_gb=ANSIBLE_GLOBAL_VARS['ebs_data_vol_volume_size'],
+    data_volume_size_gb=20,
+    data_volume_type='gp2',
+    data_volume_count=1,
     driver_mem_gb=0.5,
     coordinator_mem_gb=5.5,
     worker_mem_gb=5.5,
@@ -151,243 +215,152 @@ DEFAULTS = dict(
     cluster_log_level='WARN'
 )
 
-class Options(object):
-    """
-    Options class to replace Ansible OptParser
-    """
-    def __init__(self, subset=None, syntax=False, listhosts=False, listtasks=False, listtags=False,
-                 tags=None, module_path=None, forks=MAX_CONCURRENT_TASKS, connection='smart',
-                 remote_user=None, private_key_file=None, ssh_common_args=None, sftp_extra_args=None,
-                 scp_extra_args=None, ssh_extra_args=None, become=False, become_method='sudo',
-                 become_user='root', verbosity=0, check=False):
-        self.subset = subset
-        self.syntax = syntax
-        self.listhosts = listhosts
-        self.listtasks = listtasks
-        self.listtags = listtags
-        self.tags = tags
-        self.module_path = module_path
-        self.forks = forks
-        self.connection = connection
-        self.remote_user = remote_user
-        self.private_key_file = private_key_file
-        self.ssh_common_args = ssh_common_args
-        self.sftp_extra_args = sftp_extra_args
-        self.scp_extra_args = scp_extra_args
-        self.ssh_extra_args = ssh_extra_args
-        self.become = become
-        self.become_method = become_method
-        self.become_user = become_user
-        self.verbosity = verbosity
-        self.check = check
 
-
-class Runner(object):
-
-    def __init__(self, hostnames, playbook, private_key_file, run_data, tags=None, become_pass=None,
-                 verbosity=0, callback=None, subset_pattern=None):
-
-        self.hostnames = hostnames
-
-        self.playbook = os.path.join(playbooks_dir, playbook)
-        self.run_data = run_data
-
-        self.options = Options(tags=tags, subset=subset_pattern, private_key_file=private_key_file, verbosity=verbosity)
-
-        self.display = Display()
-        self.display.verbosity = verbosity
-        playbook_executor.verbosity = verbosity
-
-        passwords = {'become_pass': None}
-
-        # Gets data from YAML/JSON files
-        self.loader = DataLoader()
-        self.loader.set_vault_password(os.environ.get('VAULT_PASS'))
-
-        self.variable_manager = VariableManager()
-        self.variable_manager.extra_vars = self.run_data
-
-        self.inventory = Inventory(loader=self.loader, variable_manager=self.variable_manager, host_list=self.hostnames)
-        self.variable_manager.set_inventory(self.inventory)
-
-        self.pbex = playbook_executor.PlaybookExecutor(
-            playbooks=[self.playbook],
-            inventory=self.inventory,
-            variable_manager=self.variable_manager,
-            loader=self.loader,
-            options=self.options,
-            passwords=passwords)
-
-        if callback:
-            self.pbex._tqm._stdout_callback = callback
-
-    def run(self):
-        self.pbex.run()
-        stats = self.pbex._tqm._stats
-
-        run_success = True
-        hosts = sorted(stats.processed.keys())
-        for h in hosts:
-            t = stats.summarize(h)
-            if t['unreachable'] > 0 or t['failures'] > 0:
-                run_success = False
-
-        return run_success
-
-
-class CallbackModule(CallbackBase):
-    """
-    Reference: https://github.com/ansible/ansible/blob/v2.0.0.2-1/lib/ansible/plugins/callback/default.py
-    """
-
-    CALLBACK_VERSION = 2.0
-    CALLBACK_TYPE = 'stored'
-    CALLBACK_NAME = 'myria'
-
-    def __init__(self, verbosity, retry_hosts):
-        super(CallbackModule, self).__init__()
-        self.verbosity = verbosity
-        self.retry_hosts = retry_hosts
-
-    def echo(self, msg):
-        if self.verbosity > 0:
-            click.echo(msg)
-
-    def v2_runner_on_failed(self, result, ignore_errors=False):
-        delegated_vars = result._result.get('_ansible_delegated_vars', None)
-
-        # Add the failed host to set of hosts to retry
-        self.retry_hosts.add(result._host.get_name())
-
-        # Catch an exception
-        # This may never be called because default handler deletes
-        # the exception, since Ansible thinks it knows better
-        if 'exception' in result._result:
-            # Extract the error message and log it
-            # error = result._result['exception'].strip().split('\n')[-1]
-            # print(error)
-            msg = "An exception occurred during task execution. The full traceback is:\n" + result._result['exception']
-            self.echo(msg)
-
-            # Remove the exception from the result so it's not shown every time
-            del result._result['exception']
-
-        # Else log the reason for the failure
-        if result._task.loop and 'results' in result._result:
-            self._process_items(result)  # item_on_failed, item_on_skipped, item_on_ok
+def create_key_pair_and_private_key_file(key_pair, private_key_file, region, profile=None, verbosity=0):
+    # First, check if private key file exists and is readable
+    if verbosity > 0:
+        click.echo("Checking for existence/readability of private key file '%s'..." % private_key_file)
+    private_key_exists = (os.path.isfile(private_key_file) and os.access(private_key_file, os.R_OK))
+    ec2 = boto.ec2.connect_to_region(region, profile_name=profile)
+    try:
+        if verbosity > 0:
+            click.echo("Checking for existence of key pair '%s'..." % key_pair)
+        key = ec2.get_all_key_pairs(keynames=[key_pair])[0]
+    except ec2.ResponseError as e:
+        if e.code == 'InvalidKeyPair.NotFound':
+            # Fail if key pair doesn't exist but private key file already exists
+            if private_key_exists:
+                click.echo("""
+Key pair '{key_pair}' not found, but private key file '{private_key_file}' already exists!
+Please delete or rename it, delete the key pair '{key_pair}' from the {region} region, and rerun the script.
+""".format(key_pair=key_pair, private_key_file=private_key_file, region=region))
+                sys.exit(1)
+            if verbosity > 0:
+                click.echo("Key pair '%s' not found, creating..." % key_pair)
+            key = ec2.create_key_pair(key_pair)
+            if verbosity > 0:
+                click.echo("Saving private key for key pair '%s' to file '%s'..." % (key_pair, private_key_file))
+            key_dir = os.path.dirname(private_key_file)
+            key.save(key_dir)
+            # key.save() creates file with hardcoded name <key_pair>.pem
+            os.rename(os.path.join(key_dir, "%s.pem" % key_pair), private_key_file)
         else:
-            if delegated_vars:
-                self.echo("fatal: [%s -> %s]: FAILED! => %s" % (result._host.get_name(), delegated_vars['ansible_host'], self._dump_results(result._result)))
-            else:
-                self.echo("fatal: [%s]: FAILED! => %s" % (result._host.get_name(), self._dump_results(result._result)))
+            raise
+    else:
+        # Fail if key pair already exists but private key file is missing
+        if not private_key_exists:
+            click.echo("""
+Key pair '{key_pair}' exists in the {region} region but private key file '{private_key_file}' is missing!
+Either 1) use a different key pair, 2) copy the private key file for the key pair '{key_pair}' to '{private_key_file}',
+or 3) delete the key pair '{key_pair}' from the {region} region, and rerun the script.
+""".format(key_pair=key_pair, private_key_file=private_key_file, region=region))
+            sys.exit(1)
 
-    def v2_runner_on_ok(self, result):
-        self._clean_results(result._result, result._task.action)
-        delegated_vars = result._result.get('_ansible_delegated_vars', None)
-        if result._task.action == 'include':
-            return
-        elif result._result.get('changed', False):
-            if delegated_vars:
-                msg = "changed: [%s -> %s]" % (result._host.get_name(), delegated_vars['ansible_host'])
-            else:
-                msg = "changed: [%s]" % result._host.get_name()
+
+def write_inventory_file(cluster_name, region, profile, verbosity=0):
+    ec2_ini_tmpfile = NamedTemporaryFile(delete=False)
+    if verbosity > 0:
+        click.echo("Writing Ansible dynamic inventory file to %s" % ec2_ini_tmpfile.name)
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader(playbooks_dir))
+    template = env.get_template("ec2.ini.j2")
+    template_args = dict(REGION=region, CLUSTER_NAME=cluster_name)
+    # We can't pass in None for a missing profile or the template won't behave correctly.
+    if profile:
+        template_args.update(PROFILE=profile)
+    ec2_ini_tmpfile.write(template.render(template_args))
+    # THIS IS CRITICAL (ec2.py won't see full file contents otherwise)
+    ec2_ini_tmpfile.flush()
+    return ec2_ini_tmpfile.name
+
+
+def launch_cluster(cluster_name, verbosity=0, **kwargs):
+    # Create EC2 key pair if absent
+    create_key_pair_and_private_key_file(kwargs['key_pair'], kwargs['private_key_file'], kwargs['region'],
+            profile=kwargs['profile'], verbosity=verbosity)
+    # Create security group for this cluster
+    group = create_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'],
+            vpc_id=kwargs['vpc_id'], verbosity=verbosity)
+    # Tag security group to designate as Myria cluster
+    group_tags = {'app': "myria", 'storage-type': kwargs['storage_type']}
+    if kwargs['iam_user']:
+        group_tags.update('user:Name', kwargs['iam_user'])
+    if kwargs['spot_price']:
+        group_tags.update('spot-price', kwargs['spot_price'])
+    group.add_tags(group_tags)
+    # Allow this group complete access to itself
+    self_rules = [SecurityGroupRule(proto, 0, 65535, "0.0.0.0/0", group) for proto in ['tcp', 'udp']]
+    rules = self_rules + SECURITY_GROUP_RULES
+    # Add security group rules
+    for rule in rules:
+        group.authorize(ip_protocol=rule.ip_protocol,
+                        from_port=rule.from_port,
+                        to_port=rule.to_port,
+                        cidr_ip=rule.cidr_ip,
+                        src_group=rule.src_group)
+    # Launch instances
+    if verbosity > 0:
+        click.echo("Launching instances...")
+    ec2 = boto.ec2.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
+    launch_args=dict(image_id=kwargs['ami_id'],
+                     key_name=kwargs['key_pair'],
+                     security_groups=[group.name],
+                     instance_type=kwargs['instance_type'],
+                     placement=kwargs['zone'],
+                     subnet_id=kwargs['subnet_id'],
+                     block_device_map=kwargs.get('device_mapping'),
+                     instance_profile_name=kwargs['role'],
+                     ebs_optimized=(kwargs['storage_type'] == 'ebs'))
+    launched_instances = []
+    if kwargs.get('spot_price'):
+        launched_instance_ids = []
+        launch_args.update(price=kwargs['spot_price'],
+                           count=kwargs['cluster_size'],
+                           launch_group="launch-group-%s" % cluster_name,
+                           availability_zone_group="az-launch-group-%s" % cluster_name)
+        spot_requests = ec2.request_spot_instances(**launch_args)
+        while True:
+            for req in spot_requests:
+                if req.state != "active":
+                    break
+                else:
+                    launched_instance_ids.append(req.instance_id)
+            else: # all requests fulfilled, so break out of while loop
+                break
+            if verbosity > 0:
+                click.echo("Not all spot requests fulfilled, waiting 60 seconds...")
+            sleep(60)
+
+        reservations = ec2.get_all_instances(launched_instance_ids)
+        launched_instances = [instance for res in reservations for instance in res.instances]
+    else:
+        launch_args.update(min_count=kwargs['cluster_size'], max_count=kwargs['cluster_size'])
+        reservation = ec2.run_instances(**launch_args)
+        launched_instances = reservation.instances
+    # Tag instances
+    if verbosity > 0:
+        click.echo("Tagging instances...")
+    instances = sorted((instance for instance in launched_instances), key=lambda i: i.private_dns_name)
+    for idx, instance in enumerate(instances):
+        instance_tags = {'app': "myria", 'cluster-name': cluster_name}
+        if kwargs['iam_user']:
+            instance_tags.update('user:Name', kwargs['iam_user'])
+        if kwargs['spot_price']:
+            instance_tags.update('spot-price', kwargs['spot_price'])
+        instance.add_tags(instance_tags)
+        # Tag volumes
+        volumes = ec2.get_all_volumes(filters={'attachment.instance-id': instance.id})
+        for volume in volumes:
+            volume_tags = {'app': "myria", 'cluster-name': cluster_name}
+            if kwargs['iam_user']:
+                volume_tags.update('user:Name', kwargs['iam_user'])
+            volume.add_tags(volume_tags)
+        if idx == 0:
+            # Tag coordinator
+            instance.add_tags({'cluster-role': "coordinator", 'worker-id': "0"})
         else:
-            if delegated_vars:
-                msg = "ok: [%s -> %s]" % (result._host.get_name(), delegated_vars['ansible_host'])
-            else:
-                msg = "ok: [%s]" % result._host.get_name()
-
-        if result._task.loop and 'results' in result._result:
-            self._process_items(result)  # item_on_failed, item_on_skipped, item_on_ok
-        else:
-            self.echo(msg)
-
-    def v2_runner_on_skipped(self, result):
-        if result._task.loop and 'results' in result._result:
-            self._process_items(result)  # item_on_failed, item_on_skipped, item_on_ok
-        else:
-            msg = "skipping: [%s]" % result._host.get_name()
-            self.echo(msg)
-
-    def v2_runner_on_unreachable(self, result):
-        # Add the failed host to set of hosts to retry
-        self.retry_hosts.add(result._host.get_name())
-
-        delegated_vars = result._result.get('_ansible_delegated_vars', None)
-        if delegated_vars:
-            self.echo("fatal: [%s -> %s]: UNREACHABLE! => %s" % (result._host.get_name(), delegated_vars['ansible_host'], self._dump_results(result._result)))
-        else:
-            self.echo("fatal: [%s]: UNREACHABLE! => %s" % (result._host.get_name(), self._dump_results(result._result)))
-
-    def v2_runner_on_no_hosts(self, task):
-        self.echo("skipping: no hosts matched")
-
-    def v2_playbook_on_task_start(self, task, is_conditional):
-        self.echo("TASK [%s]" % task.get_name().strip())
-
-    def v2_playbook_on_play_start(self, play):
-        name = play.get_name().strip()
-        if not name:
-            msg = "PLAY"
-        else:
-            msg = "PLAY [%s]" % name
-
-        self.echo(msg)
-
-    def v2_playbook_item_on_ok(self, result):
-        delegated_vars = result._result.get('_ansible_delegated_vars', None)
-        if result._task.action == 'include':
-            return
-        elif result._result.get('changed', False):
-            if delegated_vars:
-                msg = "changed: [%s -> %s]" % (result._host.get_name(), delegated_vars['ansible_host'])
-            else:
-                msg = "changed: [%s]" % result._host.get_name()
-        else:
-            if delegated_vars:
-                msg = "ok: [%s -> %s]" % (result._host.get_name(), delegated_vars['ansible_host'])
-            else:
-                msg = "ok: [%s]" % result._host.get_name()
-
-        msg += " => (item=%s)" % (result._result['item'])
-
-        self.echo(msg)
-
-    def v2_playbook_item_on_failed(self, result):
-        # Add the failed host to set of hosts to retry
-        self.retry_hosts.add(result._host.get_name())
-
-        delegated_vars = result._result.get('_ansible_delegated_vars', None)
-        if 'exception' in result._result:
-            msg = "An exception occurred during task execution. The full traceback is:\n" + result._result['exception']
-            self.echo(msg)
-            # Remove the exception from the result so it's not shown every time
-            del result._result['exception']
-
-        if delegated_vars:
-            self.echo("failed: [%s -> %s] => (item=%s) => %s" % (result._host.get_name(), delegated_vars['ansible_host'], result._result['item'], self._dump_results(result._result)))
-        else:
-            self.echo("failed: [%s] => (item=%s) => %s" % (result._host.get_name(), result._result['item'], self._dump_results(result._result)))
-
-    def v2_playbook_item_on_skipped(self, result):
-        msg = "skipping: [%s] => (item=%s) " % (result._host.get_name(), result._result['item'])
-        self.echo(msg)
-
-    def v2_playbook_on_stats(self, stats):
-        hosts = sorted(stats.processed.keys())
-        for h in hosts:
-            t = stats.summarize(h)
-
-            msg = "PLAY RECAP [%s] : %s %s %s %s %s" % (
-                h,
-                "ok: %s" % (t['ok']),
-                "changed: %s" % (t['changed']),
-                "unreachable: %s" % (t['unreachable']),
-                "skipped: %s" % (t['skipped']),
-                "failed: %s" % (t['failures']),
-            )
-
-            self.echo(msg)
+            # Tag workers
+            worker_id_tag = ','.join(map(str, range(((idx - 1) * kwargs['workers_per_node']) + 1, (idx  * kwargs['workers_per_node']) + 1)))
+            instance.add_tags({'cluster-role': "worker", 'worker-id': worker_id_tag})
 
 
 def get_security_group_for_cluster(cluster_name, region, profile=None, vpc_id=None):
@@ -399,17 +372,45 @@ def get_security_group_for_cluster(cluster_name, region, profile=None, vpc_id=No
         groups_in_vpc = ec2.get_all_security_groups(filters={'vpc-id': vpc_id})
         groups = [g for g in groups_in_vpc if g.name == cluster_name]
     else:
-        groups_with_name = ec2.get_all_security_groups(filters={'group-name': cluster_name})
-        groups = groups_with_name
-    if len(groups) == 0: # no groups found
-        raise ValueError("No security groups found with name '%s'" % cluster_name)
-    elif len(groups) > 1: # multiple groups found
-        raise ValueError("Multiple security groups found with name '%s'" % cluster_name)
-    return groups[0]
+        try:
+            groups = ec2.get_all_security_groups(groupnames=cluster_name)
+        except ec2.ResponseError as e:
+            if e.code == 'InvalidGroup.NotFound':
+                return None
+            else:
+                raise
+    if not groups:
+        return None
+    else:
+        return groups[0]
+
+
+def create_security_group_for_cluster(cluster_name, region, profile=None, vpc_id=None, verbosity=0):
+    if verbosity > 0:
+        click.echo("Creating security group '%s' in region '%s'..." % (cluster_name, region))
+    ec2 = boto.ec2.connect_to_region(region, profile_name=profile)
+    group = ec2.create_security_group(cluster_name, "Myria security group", vpc_id=vpc_id)
+    # We need to poll for availability after creation since as usual AWS is eventually consistent
+    while True:
+        try:
+            new_group = ec2.get_all_security_groups(group_ids=[group.id])[0]
+        except ec2.ResponseError as e:
+            if e.code == 'InvalidGroup.NotFound':
+                if verbosity > 0:
+                    click.echo("Waiting for security group '%s' in region '%s' to become available..." % (cluster_name, region))
+                sleep(5)
+            else:
+                raise
+        else:
+            break
+    return group
 
 
 def terminate_cluster(cluster_name, region, profile=None, vpc_id=None):
     group = get_security_group_for_cluster(cluster_name, region, profile=profile, vpc_id=vpc_id)
+    if not group:
+        click.echo("Security group '%s' not found" % cluster_name)
+        return
     instance_ids = [instance.id for instance in group.instances()]
     # we want to allow users to delete a security group with no instances
     if instance_ids:
@@ -423,7 +424,7 @@ def terminate_cluster(cluster_name, region, profile=None, vpc_id=None):
             group.delete()
         except EC2ResponseError as e:
             if e.error_code == "DependencyViolation":
-                click.echo("Security group state still converging, retrying in 5 seconds...")
+                click.echo("Security group state still converging...")
                 sleep(5)
             else:
                 raise
@@ -449,6 +450,26 @@ def get_worker_public_hostnames(cluster_name, region, profile=None, vpc_id=None)
         if instance.tags.get('cluster-role') == "worker":
             worker_hostnames.append(instance.public_dns_name)
     return worker_hostnames
+
+
+def wait_for_all_instances_reachable(cluster_name, region, profile=None, vpc_id=None, verbosity=0):
+    group = get_security_group_for_cluster(cluster_name, region, profile=profile, vpc_id=vpc_id)
+    instance_ids = [instance.id for instance in group.instances()]
+    while True:
+        ec2 = boto.ec2.connect_to_region(region, profile_name=profile)
+        statuses = ec2.get_all_instance_status(instance_ids=instance_ids, include_all_instances=True)
+        for status in statuses:
+            if status.state_name != "running":
+                break
+            if status.instance_status.status != "ok":
+                break
+            if status.instance_status.details['reachability'] != "passed":
+                break
+        else: # all instances reachable, so break out of while loop
+            break
+        if verbosity > 0:
+            click.echo("Not all instances reachable, waiting 60 seconds...")
+        sleep(60)
 
 
 def wait_for_all_workers_online(cluster_name, region, profile=None, vpc_id=None, verbosity=0):
@@ -575,6 +596,30 @@ def validate_region(ctx, param, value):
     return value
 
 
+def validate_storage_type(ctx, param, value):
+    if value == "local":
+        instance_type_family = instance_type_family_from_instance_type(ctx.params['instance_type'])
+        if instance_type_family not in LOCAL_STORAGE_INSTANCE_TYPE_FAMILIES:
+            raise click.BadParameter("Instance type %s is incompatible with local storage" % ctx.params['instance_type'])
+    return value
+
+
+def validate_volume_type(ctx, param, value):
+    if value is not None:
+        if ctx.params.get('storage_type') == "local":
+            raise click.BadParameter("Cannot specify volume type with --storage-type=local")
+    return value
+
+
+def validate_volume_count(ctx, param, value):
+    if value is not None:
+        if ctx.params.get('storage_type') == "local":
+            raise click.BadParameter("Cannot specify volume count with --storage-type=local")
+    elif ctx.params.get('storage_type') == "ebs":
+        return DEFAULTS['data_volume_count']
+    return value
+
+
 def validate_volume_size(ctx, param, value):
     if value is not None:
         if ctx.params.get('storage_type') == "local":
@@ -584,11 +629,19 @@ def validate_volume_size(ctx, param, value):
     return value
 
 
-def validate_storage_type(ctx, param, value):
-    if value == "local":
-        instance_type_family = instance_type_family_from_instance_type(ctx.params['instance_type'])
-        if instance_type_family not in LOCAL_STORAGE_INSTANCE_TYPE_FAMILIES:
-            raise click.BadParameter("Instance type %s is incompatible with local storage" % ctx.params['instance_type'])
+def validate_volume_iops(ctx, param, value):
+    if value is not None:
+        if ctx.params.get('data_volume_type') != "io1":
+            raise click.BadParameter("--data-volume-iops can only be specified with 'io1' volume type")
+    return value
+
+
+def validate_data_volume_count(ctx, param, value):
+    if value is not None:
+        if ctx.params.get('storage_type') == "local":
+            raise click.BadParameter("Cannot specify --data-volume-count with --storage-type=local")
+        if value > ctx.params.get('workers_per_node'):
+            raise click.BadParameter("--data-volume-count cannot exceed number of workers per node")
     return value
 
 
@@ -606,52 +659,82 @@ def get_iam_user(region, profile=None, verbosity=0):
     return iam_user
 
 
-# If this is called with `local=False`, then the environment variable `EC2_INI_PATH`
+def get_block_device_mapping(**kwargs):
+    # Create block device mapping
+    device_mapping = BlockDeviceMapping()
+    # Generate all local volume mappings
+    num_local_volumes = EPHEMERAL_VOLUMES_BY_INSTANCE_TYPE.get(kwargs['instance_type'], 0)
+    for local_dev_idx in xrange(num_local_volumes):
+        local_dev = BlockDeviceType()
+        local_dev.ephemeral_name = "%s%d" % ("ephemeral", local_dev_idx)
+        local_dev_letter = ascii_lowercase[1+local_dev_idx]
+        local_dev_name = "%s%s" % (DEVICE_PATH_PREFIX, local_dev_letter)
+        device_mapping[local_dev_name] = local_dev
+    # Generate all EBS volume mappings
+    if kwargs['storage_type'] == 'ebs':
+        num_ebs_volumes = kwargs['data_volume_count']
+        for ebs_dev_idx in xrange(num_ebs_volumes):
+            ebs_dev = EBSBlockDeviceType()
+            ebs_dev.size = kwargs['data_volume_size_gb']
+            ebs_dev.delete_on_termination = True
+            ebs_dev.volume_type = kwargs['data_volume_type']
+            ebs_dev.iops = kwargs['data_volume_iops']
+            # We always have one root volume and 0 to 4 ephemeral volumes.
+            ebs_dev_letter = ascii_lowercase[1+num_local_volumes+ebs_dev_idx]
+            ebs_dev_name = "%s%s" % (DEVICE_PATH_PREFIX, ebs_dev_letter)
+            device_mapping[ebs_dev_name] = ebs_dev
+    return device_mapping
+
+
+# If this is called with `local=False`, then the key `EC2_INI_PATH` in `extra_vars`
 # must be set to a valid instance of the template `myria/cluster/playbooks/ec2.ini.j2`.
 def run_playbook(playbook, private_key_file, local=True, extra_vars={}, tags=[], max_retries=MAX_RETRIES_DEFAULT, destroy_cluster_on_failure=True, verbosity=0):
+    # this should be done in an env var but Ansible maintainers are too stupid to support it
     extra_vars.update(ansible_python_interpreter='/usr/bin/env python')
     cluster_name = extra_vars['CLUSTER_NAME']
     region = extra_vars['REGION']
     profile = extra_vars.get('PROFILE')
     vpc_id = extra_vars.get('VPC_ID')
-    playbook_args = dict(
-        hostnames=['localhost'] if local else INVENTORY_SCRIPT_PATH,
-        playbook=playbook,
-        private_key_file=private_key_file,
-        run_data=extra_vars,
-        verbosity=verbosity,
-        tags=tags
-    )
-    # TODO: exponential backoff for unreachable hosts?
+    playbook_path = os.path.join(playbooks_dir, playbook)
+    inventory = "localhost," if local else INVENTORY_SCRIPT_PATH # comma is not a typo, Ansible is just stupid
+    # Override default retry files directory
+    ansible_retry_tmpdir = mkdtemp()
+    retry_filename = os.path.join(ansible_retry_tmpdir, os.path.splitext(os.path.basename(playbook))[0] + ".retry")
+    env = dict(os.environ, ANSIBLE_RETRY_FILES_SAVE_PATH=ansible_retry_tmpdir)
+    if 'EC2_INI_PATH' in extra_vars:
+        env.update(EC2_INI_PATH=extra_vars['EC2_INI_PATH'])
+    # see https://github.com/ansible/ansible/pull/9404/files
     retries = 0
-    retry_hosts_pattern = None
+    failed_hosts = []
     while True:
-        retry_hosts = set()
-        playbook_args.update(callback=CallbackModule(verbosity, retry_hosts), subset_pattern=retry_hosts_pattern)
-        try:
-            success = Runner(**playbook_args).run()
-        except Exception as e:
-            if verbosity > 0:
-                click.echo(e)
-            if destroy_cluster_on_failure:
-                click.echo("Unexpected error, destroying cluster...")
-                terminate_cluster(cluster_name, region=region, profile=profile, vpc_id=vpc_id)
-            else:
-                click.echo("Unexpected error, exiting...")
-            sys.exit(1)
-        if not success:
-            assert retry_hosts
-            if retries < max_retries:
-                retries += 1
-                retry_hosts_pattern = ",".join(retry_hosts)
-                click.echo("Retrying playbook run on hosts %s (%d of %d)" % (retry_hosts_pattern, retries, max_retries))
-            else:
-                if destroy_cluster_on_failure:
-                    click.echo("Maximum retries (%d) exceeded, destroying cluster..." % max_retries)
-                    terminate_cluster(cluster_name, region=region, profile=profile, vpc_id=vpc_id)
+        # ansible_args = [ANSIBLE_EXECUTABLE_PATH, playbook_path, "--inventory", inventory, "--extra-vars", json.dumps(extra_vars), "--private-key", private_key_file]
+        ansible_args = [ANSIBLE_EXECUTABLE_PATH, playbook_path, "--inventory", inventory, "--extra-vars", json.dumps(extra_vars), "--private-key", private_key_file]
+        if tags:
+            ansible_args.extend(["--tags", ','.join(tags)])
+        if failed_hosts:
+            ansible_args.extend(["--limit", "@%s" % retry_filename])
+        if verbosity > 0:
+            ansible_args.append("-" + ('v' * verbosity))
+        status = subprocess.call(ansible_args, env=env)
+        # handle failure
+        if status != 0:
+            if status in [2, 3]: # failed tasks or unreachable hosts respectively
+                if retries < max_retries:
+                    retries += 1
+                    failed_hosts = []
+                    with open(retry_filename,'r') as f:
+                        failed_hosts = f.read().splitlines() 
+                    assert(failed_hosts) # should always have at least one failed host with these exit codes
+                    click.echo("Playbook run failed on hosts %s, retrying (%d of %d)..." % (', '.join(failed_hosts), retries, max_retries))
+                    continue
                 else:
-                    click.echo("Maximum retries (%d) exceeded, exiting..." % max_retries)
-                sys.exit(1)
+                    click.echo("Exceeded maximum %d retries, exiting." % max_retries)
+            else:
+                click.echo("Unexpected Ansible error, exiting.")
+            if destroy_cluster_on_failure:
+                click.echo("Destroying cluster...")
+                terminate_cluster(cluster_name, region=region, profile=profile, vpc_id=vpc_id)
+            sys.exit(1)
         else:
             break
 
@@ -668,7 +751,7 @@ def run():
 @click.option('--silent', is_flag=True, callback=validate_console_logging)
 @click.option('--unprovisioned', is_flag=True, is_eager=True, help="Install required software at deployment")
 @click.option('--profile', default=None, is_eager=True,
-    help="Boto profile used to launch your cluster")
+    help="AWS credential profile used to launch your cluster")
 @click.option('--region', show_default=True, default=DEFAULTS['region'], is_eager=True, callback=validate_region,
     help="AWS region to launch your cluster in")
 @click.option('--zone', show_default=True, default=None, is_eager=True,
@@ -680,17 +763,23 @@ def run():
 @click.option('--instance-type', show_default=True, default=DEFAULTS['instance_type'], is_eager=True,
     help="EC2 instance type for your cluster")
 @click.option('--cluster-size', show_default=True, default=DEFAULTS['cluster_size'],
-    help="Number of EC2 instances in your cluster")
+    type=click.IntRange(3, 1000), help="Number of EC2 instances in your cluster")
 @click.option('--ami-id', callback=default_ami_id_from_region,
     help="ID of the AMI (Amazon Machine Image) used for your EC2 instances [default: %s]" % DEFAULT_PROVISIONED_HVM_AMI_IDS[DEFAULTS['region']])
 @click.option('--subnet-id', default=None, callback=validate_subnet_id,
     help="ID of the VPC subnet in which to launch your EC2 instances")
 @click.option('--role', help="Name of an IAM role used to launch your EC2 instances")
 @click.option('--spot-price', help="Price in dollars of the maximum bid for an EC2 spot instance request")
-@click.option('--storage-type', show_default=True, callback=validate_storage_type,
-    type=click.Choice(['ebs', 'local']), default=DEFAULTS['storage_type'])
-@click.option('--data-volume-size-gb', callback=validate_volume_size,
-    help="Size of each instance's EBS data volume (used by Hadoop and PostgreSQL) in GB [default: %s]" % DEFAULTS['data_volume_size_gb'])
+@click.option('--storage-type', show_default=True, callback=validate_storage_type, is_eager=True,
+    type=click.Choice(['ebs', 'local']), default=DEFAULTS['storage_type'],
+    help="Type of the block device where Myria data is stored")
+@click.option('--data-volume-size-gb', show_default=True, default=DEFAULTS['data_volume_size_gb'],
+    callback=validate_volume_size, help="Size of each EBS data volume in GB")
+@click.option('--data-volume-type', show_default=True, default=DEFAULTS['data_volume_type'],
+    type=click.Choice(['gp2', 'io1', 'st1', 'sc1']), callback=validate_volume_type,
+    help="EBS data volume type: General Purpose SSD (gp2), Provisioned IOPS SSD (io1), Throughput Optimized HDD (st1), Cold HDD (sc1)")
+@click.option('--data-volume-iops', type=int, default=None, callback=validate_volume_iops,
+    help="IOPS to provision for each EBS data volume (only applies to 'io1' volume type)")
 @click.option('--driver-mem-gb', show_default=True, default=DEFAULTS['driver_mem_gb'],
     help="Physical memory (in GB) reserved for Myria driver")
 @click.option('--coordinator-mem-gb', show_default=True, default=DEFAULTS['coordinator_mem_gb'],
@@ -709,12 +798,12 @@ def run():
     help="Number of virtual CPUs on each EC2 instance available for Myria processes")
 @click.option('--workers-per-node', show_default=True, default=DEFAULTS['workers_per_node'],
     help="Number of Myria workers per cluster node")
+@click.option('--data-volume-count', type=click.IntRange(1, 8), show_default=True, default=DEFAULTS['data_volume_count'],
+    callback=validate_data_volume_count, help="Number of EBS data volumes to attach to this instance")
 @click.option('--cluster-log-level', show_default=True,
-    type=click.Choice(['OFF', 'FATAL', 'ERROR', 'WARN', 'DEBUG', 'TRACE', 'ALL']), default=DEFAULTS['cluster_log_level'])
+    type=click.Choice(LOG_LEVELS), default=DEFAULTS['cluster_log_level'])
 def create_cluster(cluster_name, **kwargs):
     verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
-    ec2_ini_tmpfile = NamedTemporaryFile(delete=False)
-    os.environ['EC2_INI_PATH'] = ec2_ini_tmpfile.name
     vpc_id = kwargs.get('vpc_id')
     iam_user = get_iam_user(kwargs['region'], profile=kwargs['profile'], verbosity=verbosity)
 
@@ -728,17 +817,19 @@ def create_cluster(cluster_name, **kwargs):
     validate_aws_settings(kwargs['region'], kwargs['profile'], vpc_id, verbosity=verbosity)
 
     # abort if cluster already exists
-    try:
-        get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
-    except:
-        pass
-    else:
+    if get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id):
         click.echo("""
 Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to create a new cluster with the same name, first run
 
 {script_name} destroy {cluster_name} {options}
 """.format(script_name=SCRIPT_NAME, cluster_name=cluster_name, region=kwargs['region'], options=options_str))
         sys.exit(1)
+
+    device_mapping = get_block_device_mapping(**kwargs)
+    # We need to massage opaque BlockDeviceType objects into dicts we can pass to Ansible
+    all_volumes = [dict(v.__dict__.iteritems(), device_name=k) for k, v in sorted(device_mapping.iteritems(), key=itemgetter(0))]
+    ebs_volumes = all_volumes[-kwargs['data_volume_count']:]
+    ephemeral_volumes = all_volumes[0:-kwargs['data_volume_count']]
 
     # install keyboard interrupt handler to destroy partially-deployed cluster
     # TODO: signal handlers are inherited by each child process spawned by Ansible,
@@ -754,48 +845,48 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
         sys.exit(1)
 
     signal.signal(signal.SIGINT, signal_handler)
+    try:
+        # launch all instances in this cluster
+        launch_cluster(cluster_name, vpc_id=vpc_id, iam_user=iam_user, device_mapping=device_mapping, verbosity=verbosity, **kwargs)
+    except Exception as e:
+        if verbosity > 0:
+            click.echo(e)
+        click.echo("Unexpected error, destroying cluster...")
+        terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+        sys.exit(1)
 
+    # poll instances for status until all are reachable
+    if verbosity > 0:
+        click.echo("Waiting for all instances to become reachable...")
+    wait_for_all_instances_reachable(cluster_name, kwargs['region'], profile=kwargs['profile'],
+            vpc_id=vpc_id, verbosity=verbosity)
+    # Write ec2.ini file for dynamic inventory
+    ec2_ini_file = write_inventory_file(cluster_name, kwargs['region'], kwargs['profile'], verbosity=verbosity)
+    # run remote playbook to provision EC2 instances
     extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None)
     extra_vars.update(CLUSTER_NAME=cluster_name)
     extra_vars.update(VPC_ID=vpc_id)
-    extra_vars.update(EC2_INI_PATH=ec2_ini_tmpfile.name)
     if iam_user:
         extra_vars.update(IAM_USER=iam_user)
+    extra_vars.update(ALL_VOLUMES=all_volumes)
+    extra_vars.update(EBS_VOLUMES=ebs_volumes)
+    extra_vars.update(EPHEMERAL_VOLUMES=ephemeral_volumes)
+    extra_vars.update(EC2_INI_PATH=ec2_ini_file)
 
-    if verbosity > 1:
-        for k, v in extra_vars.iteritems():
-            click.echo("%s: %s" % (k, v))
+    if verbosity > 2:
+        click.echo(json.dumps(extra_vars))
 
-    # run local playbook to launch EC2 instances
-    run_playbook("local.yml", kwargs['private_key_file'], extra_vars=extra_vars, max_retries=0, verbosity=verbosity)
-
-    # poll instances for status until all are reachable
-    group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
-    instance_ids = [instance.id for instance in group.instances()]
-    while True:
-        ec2 = boto.ec2.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
-        statuses = ec2.get_all_instance_status(instance_ids=instance_ids)
-        for status in statuses:
-            if status.system_status.details['reachability'] != "passed":
-                if verbosity > 0:
-                    click.echo("Not all instances reachable, waiting 60 seconds...")
-                sleep(60)
-                break
-        else:
-            break
-
-    click.echo("All instances running...")
-
-    # run remote playbook to provision EC2 instances
     all_provisioned_ami_ids = DEFAULT_PROVISIONED_HVM_AMI_IDS.values() + DEFAULT_PROVISIONED_PV_AMI_IDS.values()
     tags = ['configure'] if kwargs['ami_id'] in all_provisioned_ami_ids else ['provision', 'configure']
     run_playbook("remote.yml", kwargs['private_key_file'], local=False, extra_vars=extra_vars, tags=tags, verbosity=verbosity)
 
     # wait for all workers to become available
+    if verbosity > 0:
+        click.echo("Waiting for Myria service to become available...")
     if not wait_for_all_workers_online(cluster_name, kwargs['region'], profile=kwargs['profile'],
             vpc_id=vpc_id, verbosity=verbosity):
         print("""
-The Myria service on your cluster '{cluster_name}' in the AWS '{region}' region returned an error.
+The Myria service on your cluster '{cluster_name}' in the '{region}' region returned an error.
 Please refer to the error message above for diagnosis. Exiting (not destroying cluster).
 """.format(cluster_name=cluster_name, region=kwargs['region']))
         sys.exit(1)
@@ -814,13 +905,14 @@ Your new Myria cluster '{cluster_name}' has been launched on Amazon EC2 in the '
 
 View the Myria worker IDs and public hostnames of all nodes in this cluster (the coordinator has worker ID 0):
 {script_name} list {cluster_name} {options}
-
-Stop this cluster:
+""" + (
+"""Stop this cluster:
 {script_name} stop {cluster_name} {options}
 
 Start this cluster after stopping it:
 {script_name} start {cluster_name} {options}
-
+""" if not (kwargs.get('spot_price') or (kwargs['storage_type'] == "local")) else "") +
+"""
 Destroy this cluster:
 {script_name} destroy {cluster_name} {options}
 
@@ -873,6 +965,12 @@ def destroy_cluster(cluster_name, **kwargs):
 def stop_cluster(cluster_name, **kwargs):
     verbosity = 0 if kwargs['silent'] else 1
     group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+    if group.tags.get('storage-type') == "local":
+        click.echo("Cluster '%s' has storage type 'local' and cannot be stopped.")
+        sys.exit(1)
+    if group.tags.get('spot-price'):
+        click.echo("Cluster '%s' has spot instances and cannot be stopped.")
+        sys.exit(1)
     instance_ids = [instance.id for instance in group.instances()]
     if verbosity > 0:
         click.echo("Stopping instances %s" % ', '.join(instance_ids))
@@ -882,9 +980,9 @@ def stop_cluster(cluster_name, **kwargs):
         for instance in group.instances():
             instance.update(validate=True)
             if instance.state != "stopped":
-                if not kwargs['silent']:
-                    click.echo("Instance %s not stopped, retrying in 30 seconds..." % instance.id)
-                sleep(30)
+                if verbosity > 0:
+                    click.echo("Instance %s not stopped, waiting 60 seconds..." % instance.id)
+                sleep(60)
                 break # break out of for loop
         else: # all instances were stopped, so break out of while loop
             break
@@ -919,17 +1017,12 @@ def start_cluster(cluster_name, **kwargs):
         click.echo("Starting instances %s" % ', '.join(instance_ids))
     ec2 = boto.ec2.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
     ec2.start_instances(instance_ids=instance_ids)
-    while True:
-        for instance in group.instances():
-            instance.update(validate=True)
-            if instance.state != "running":
-                if not kwargs['silent']:
-                    click.echo("Instance %s not started, retrying in 30 seconds..." % instance.id)
-                sleep(30)
-                break # break out of for loop
-        else: # all instances were started, so break out of while loop
-            break
-
+    if verbosity > 0:
+        click.echo("Waiting for started instances to become available...")
+    wait_for_all_instances_reachable(cluster_name, kwargs['region'], profile=kwargs['profile'],
+            vpc_id=kwargs['vpc_id'], verbosity=verbosity)
+    if verbosity > 0:
+        click.echo("Waiting for Myria service to become available...")
     if not wait_for_all_workers_online(cluster_name, kwargs['region'], profile=kwargs['profile'],
             vpc_id=kwargs['vpc_id'], verbosity=verbosity):
         print("""
@@ -946,7 +1039,7 @@ Please refer to the error message above for diagnosis.
     coordinator_public_hostname = get_coordinator_public_hostname(
         cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
     print("""
-Your Myria cluster '{cluster_name}' in the AWS '{region}' region has been successfully restarted.
+Your Myria cluster '{cluster_name}' in the '{region}' region has been successfully restarted.
 The public hostnames of all nodes in this cluster have changed.
 You can view the new values by running
 
@@ -974,8 +1067,6 @@ New public hostname of coordinator:
     help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
 def update_cluster(cluster_name, **kwargs):
     verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
-    ec2_ini_tmpfile = NamedTemporaryFile(delete=False)
-    os.environ['EC2_INI_PATH'] = ec2_ini_tmpfile.name
 
     validate_aws_settings(kwargs['region'], kwargs['profile'], kwargs['vpc_id'], verbosity=verbosity)
     try:
@@ -984,23 +1075,16 @@ def update_cluster(cluster_name, **kwargs):
         click.echo("No cluster with name '%s' exists in region '%s'." % (cluster_name, kwargs['region']))
         sys.exit(1)
 
+    # generate Ansible EC2 dynamic inventory file
+    ec2_ini_file = write_inventory_file(cluster_name, kwargs['region'], kwargs['profile'], verbosity=verbosity)
+
     extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None)
     extra_vars.update(CLUSTER_NAME=cluster_name)
+    extra_vars.update(EC2_INI_PATH=ec2_ini_file)
 
     if verbosity > 1:
         for k, v in extra_vars.iteritems():
             click.echo("%s: %s" % (k, v))
-
-    # generate Ansible EC2 dynamic inventory file
-    env = jinja2.Environment(loader=jinja2.FileSystemLoader(playbooks_dir))
-    template = env.get_template("ec2.ini.j2")
-    template_args = dict(REGION=kwargs['region'], CLUSTER_NAME=cluster_name)
-    # We can't pass in None for a missing profile or the template won't behave correctly.
-    if kwargs.get('profile'):
-        template_args.update(PROFILE=kwargs['profile'])
-    ec2_ini_tmpfile.write(template.render(template_args))
-    # THIS IS CRITICAL (ec2.py won't see full file contents otherwise)
-    ec2_ini_tmpfile.flush()
 
     # run remote playbook to update software on EC2 instances
     click.echo("Updating Myria software on coordinator...")
@@ -1165,7 +1249,6 @@ def create_image(ami_name, **kwargs):
     vpc_id = kwargs.get('vpc_id')
     iam_user = get_iam_user(kwargs['region'], profile=kwargs['profile'], verbosity=verbosity)
     ec2_ini_tmpfile = NamedTemporaryFile(delete=False)
-    os.environ['EC2_INI_PATH'] = ec2_ini_tmpfile.name
 
     validate_aws_settings(kwargs['region'], kwargs['profile'], vpc_id, verbosity=verbosity)
 
@@ -1252,19 +1335,19 @@ instance_str + """delete security group '{ami_name}' (ID: {group_id}) from the A
         image_ids_by_region = {}
         group = get_security_group_for_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
         instance_id = group.instances()[0].id
-        ec2 = boto.ec2.connect_to_region(kwargs['region'])
+        ec2 = boto.ec2.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
         ami_id = ec2.create_image(instance_id=instance_id, name=ami_name, description=kwargs['description'])
         image_ids_by_region[kwargs['region']] = ami_id
         wait_until_image_available(ami_id, kwargs['region'], profile=kwargs['profile'], verbosity=verbosity)
         click.echo("Copying image to other regions...")
         for copy_region in kwargs['copy_to_region']:
-            ec2 = boto.ec2.connect_to_region(copy_region)
+            ec2 = boto.ec2.connect_to_region(copy_region, profile_name=kwargs['profile'])
             copy_image = ec2.copy_image(kwargs['region'], ami_id, name=ami_name, description=kwargs['description'])
             image_ids_by_region[copy_region] = copy_image.image_id
             wait_until_image_available(copy_image.image_id, copy_region, profile=kwargs['profile'], verbosity=verbosity)
         click.echo("Tagging images...")
         for region, ami_id in image_ids_by_region.iteritems():
-            ec2 = boto.ec2.connect_to_region(region)
+            ec2 = boto.ec2.connect_to_region(region, profile_name=kwargs['profile'])
             image = ec2.get_image(ami_id)
             tags = {
                 'Name': kwargs['description'],

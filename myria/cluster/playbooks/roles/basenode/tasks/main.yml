@@ -5,7 +5,7 @@
     - configure
 
 - name: Unmount first data volume if it is pre-mounted (and remove fstab entries via state=absent rather than state=unmounted)
-  mount: name="{{ legacy_mount_point }}" src="{{ all_volumes[0].device_name }}" fstype={{ data_vol_fs_type }} state=absent
+  mount: name="{{ legacy_mount_point }}" src="{{ ALL_VOLUMES[0].device_name }}" fstype={{ data_vol_fs_type }} state=absent
   register: unmount_result
   tags:
     - configure
@@ -15,13 +15,24 @@
   filesystem: fstype={{ data_vol_fs_type }} dev={{ item.device_name }} force=yes
   register: result
   failed_when: "(result | failed) and ('is mounted' not in result.err)"
-  with_items: "{{ all_volumes }}"
+  with_items: "{{ ALL_VOLUMES }}"
   tags:
     - configure
 
-- name: Mount all data volumes
-  mount: name="{{ mount_dir_root }}/data{{ item.0+1 }}" src="{{ item.1.device_name }}" fstype={{ data_vol_fs_type }} opts=rw,noatime state=mounted
-  with_indexed_items: "{{ all_volumes }}"
+- name: Mount all EBS volumes
+  mount: name="{{ebs_mount_point_prefix}}{{ item.0+1 }}" src="{{ item.1.device_name }}" fstype={{ data_vol_fs_type }} opts=rw,noatime state=mounted
+  with_indexed_items: "{{ EBS_VOLUMES }}"
+  tags:
+    - configure
+
+- name: Mount all ephemeral volumes
+  mount: name="{{ephemeral_mount_point_prefix}}{{ item.0+1 }}" src="{{ item.1.device_name }}" fstype={{ data_vol_fs_type }} opts=rw,noatime state=mounted
+  with_indexed_items: "{{ EPHEMERAL_VOLUMES }}"
+  tags:
+    - configure
+
+- name: Create default data directory symlink
+  file: src="{{default_data_vol_mount_dir}}" dest="{{default_data_dir}}" state=link force=yes mode=0755
   tags:
     - configure
 
