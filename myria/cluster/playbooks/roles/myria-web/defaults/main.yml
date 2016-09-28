@@ -2,4 +2,4 @@
 myria_web_repository_url: 'https://github.com/uwescience/myria-web.git'
 myria_web_path: '{{install_base_path}}/myria-web'
 myria_web_branch: master
-raco_branch: flatmap
+raco_branch: master
