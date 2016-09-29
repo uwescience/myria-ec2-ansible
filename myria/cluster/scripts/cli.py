@@ -516,6 +516,8 @@ def terminate_cluster(cluster_name, region, profile=None, vpc_id=None):
 def get_coordinator_public_hostname(cluster_name, region, profile=None, vpc_id=None):
     coordinator_hostname = None
     group = get_security_group_for_cluster(cluster_name, region, profile=profile, vpc_id=vpc_id)
+    if not group:
+        return None
     for instance in group.instances():
         if instance.tags.get('cluster-role') == "coordinator":
             coordinator_hostname = instance.public_dns_name
@@ -526,6 +528,8 @@ def get_coordinator_public_hostname(cluster_name, region, profile=None, vpc_id=N
 def get_worker_public_hostnames(cluster_name, region, profile=None, vpc_id=None):
     worker_hostnames = []
     group = get_security_group_for_cluster(cluster_name, region, profile=profile, vpc_id=vpc_id)
+    if not group:
+        return None
     for instance in group.instances():
         if instance.tags.get('cluster-role') == "worker":
             worker_hostnames.append(instance.public_dns_name)
@@ -534,6 +538,9 @@ def get_worker_public_hostnames(cluster_name, region, profile=None, vpc_id=None)
 
 def wait_for_all_instances_reachable(cluster_name, region, profile=None, vpc_id=None, verbosity=0):
     group = get_security_group_for_cluster(cluster_name, region, profile=profile, vpc_id=vpc_id)
+    if not group:
+        click.secho("Security group '%s' not found" % cluster_name, fg='red')
+        return False
     instance_ids = [instance.id for instance in group.instances()]
     while True:
         ec2 = boto.ec2.connect_to_region(region, profile_name=profile)
@@ -550,6 +557,7 @@ def wait_for_all_instances_reachable(cluster_name, region, profile=None, vpc_id=
         if verbosity > 0:
             click.secho("Not all instances reachable, waiting 60 seconds...", fg='yellow')
         sleep(60)
+    return True
 
 
 def wait_for_all_workers_online(cluster_name, region, profile=None, vpc_id=None, verbosity=0):
@@ -1053,8 +1061,11 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
     # poll instances for status until all are reachable
     if verbosity > 0:
         click.secho("Waiting for all instances to become reachable...", fg='yellow')
-    wait_for_all_instances_reachable(cluster_name, kwargs['region'], profile=kwargs['profile'],
-            vpc_id=vpc_id, verbosity=verbosity)
+    if not wait_for_all_instances_reachable(cluster_name, kwargs['region'], profile=kwargs['profile'],
+            vpc_id=vpc_id, verbosity=verbosity):
+        click.secho("Unexpected error, destroying cluster...", fg='red')
+        terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+        sys.exit(1)
     # Write ec2.ini file for dynamic inventory
     ec2_ini_file = write_inventory_file(cluster_name, kwargs['region'], kwargs['profile'], verbosity=verbosity)
     # run remote playbook to provision EC2 instances
@@ -1089,11 +1100,7 @@ Please refer to the error message above for diagnosis. Exiting (not destroying c
 """.format(cluster_name=cluster_name, region=kwargs['region']), fg='red')
         sys.exit(1)
 
-    coordinator_public_hostname = None
-    try:
-        coordinator_public_hostname = get_coordinator_public_hostname(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
-    except:
-        pass
+    coordinator_public_hostname = get_coordinator_public_hostname(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
     if not coordinator_public_hostname:
         click.secho("Couldn't resolve coordinator public DNS, exiting (not destroying cluster)", fg='red')
         sys.exit(1)
@@ -1169,6 +1176,9 @@ def stop_cluster(cluster_name, **kwargs):
     verbosity = 0 if kwargs['silent'] else 1
     validate_aws_settings(kwargs['region'], kwargs['profile'], kwargs['vpc_id'], verbosity=verbosity)
     group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+    if not group:
+        click.secho("No cluster with name '%s' exists in region '%s'." % (cluster_name, kwargs['region']), fg='red')
+        sys.exit(1)
     if group.tags.get('storage-type') == "local":
         click.secho("Cluster '%s' has storage type 'local' and cannot be stopped." % cluster_name, fg='red')
         sys.exit(1)
@@ -1217,6 +1227,9 @@ def start_cluster(cluster_name, **kwargs):
     verbosity = 0 if kwargs['silent'] else 1
     validate_aws_settings(kwargs['region'], kwargs['profile'], kwargs['vpc_id'], verbosity=verbosity)
     group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+    if not group:
+        click.secho("No cluster with name '%s' exists in region '%s'." % (cluster_name, kwargs['region']), fg='red')
+        sys.exit(1)
     instance_ids = [instance.id for instance in group.instances()]
     if verbosity > 0:
         click.echo("Starting instances %s" % ', '.join(instance_ids))
@@ -1224,8 +1237,11 @@ def start_cluster(cluster_name, **kwargs):
     ec2.start_instances(instance_ids=instance_ids)
     if verbosity > 0:
         click.secho("Waiting for started instances to become available...", fg='yellow')
-    wait_for_all_instances_reachable(cluster_name, kwargs['region'], profile=kwargs['profile'],
-            vpc_id=kwargs['vpc_id'], verbosity=verbosity)
+    if not wait_for_all_instances_reachable(cluster_name, kwargs['region'], profile=kwargs['profile'],
+            vpc_id=kwargs['vpc_id'], verbosity=verbosity):
+        click.secho("Unexpected error, destroying cluster...", fg='red')
+        terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+        sys.exit(1)
     if verbosity > 0:
         click.secho("Waiting for Myria service to become available...", fg='yellow')
     if not wait_for_all_workers_online(cluster_name, kwargs['region'], profile=kwargs['profile'],
@@ -1274,9 +1290,7 @@ def update_cluster(cluster_name, **kwargs):
     verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
 
     validate_aws_settings(kwargs['region'], kwargs['profile'], kwargs['vpc_id'], verbosity=verbosity)
-    try:
-        get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
-    except ValueError:
+    if not get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id']):
         click.secho("No cluster with name '%s' exists in region '%s'." % (cluster_name, kwargs['region']), fg='red')
         sys.exit(1)
 
@@ -1303,6 +1317,7 @@ def update_cluster(cluster_name, **kwargs):
 There was a problem updating Myria software.
 """ + ("See previous error messages for details." if kwargs['verbose'] else "Rerun with the --verbose option for details."),
                     fg='red')
+        sys.exit(1)
 
 
 def validate_list_options(ctx, param, value):
@@ -1337,6 +1352,9 @@ def list_cluster(cluster_name, **kwargs):
                 cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])))
         else:
             group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+            if not group:
+                click.secho("No cluster with name '%s' exists in region '%s'." % (cluster_name, kwargs['region']), fg='red')
+                sys.exit(1)
             format_str = "{: <10} {: <50}"
             print(format_str.format('WORKER_IDS', 'HOST'))
             print(format_str.format('----------', '----'))
@@ -1418,7 +1436,7 @@ def wait_until_image_available(ami_id, region, profile=None, verbosity=0):
         return True
     else:
         if verbosity > 0:
-            click.secho("Unexpected image status '%s' for AMI %s in region '%s'" % (image.state, ami_id, region), fg='yellow')
+            click.secho("Unexpected image status '%s' for AMI %s in region '%s'" % (image.state, ami_id, region), fg='red')
         return False
 
 
@@ -1484,13 +1502,8 @@ def create_image(ami_name, **kwargs):
                 sys.exit(1)
 
     # abort or delete group if group already exists
-    instance_id = None
-    group_id = None
-    try:
-        group = get_security_group_for_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
-    except:
-        pass
-    else:
+    group = get_security_group_for_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+    if group:
         group_id = group.id
         if kwargs['force_terminate']:
             click.echo("Destroying old AMI builder instance...")
@@ -1579,7 +1592,9 @@ instance_str + """delete security group '{ami_name}' (ID: {group_id}) from the A
                 image.set_launch_permissions(group_names='all')
     except Exception as e:
         if verbosity > 0:
-            click.echo(e)
+            click.secho(str(e), fg='red')
+        if verbosity > 1:
+            click.secho(traceback.format_exc(), fg='red')
         click.secho("Unexpected error, destroying instance...", fg='red')
         terminate_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
         sys.exit(1)
@@ -1589,7 +1604,9 @@ instance_str + """delete security group '{ami_name}' (ID: {group_id}) from the A
         terminate_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
     except Exception as e:
         if verbosity > 0:
-            click.echo(e)
+            click.secho(str(e), fg='red')
+        if verbosity > 1:
+            click.secho(traceback.format_exc(), fg='red')
         click.secho("Failed to properly shut down AMI builder instance. Please delete all instances in security group '%s'." % ami_name, fg='red')
 
     click.secho("Successfully created images in regions %s:" % ', '.join(image_ids_by_region.keys()), fg='green')
