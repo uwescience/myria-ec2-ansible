@@ -64,10 +64,10 @@ MAX_RETRIES_DEFAULT = 5
 USER = os.getenv('USER')
 HOME = os.getenv('HOME')
 
-
 # valid log4j log levels (https://logging.apache.org/log4j/1.2/apidocs/org/apache/log4j/Level.html)
 LOG_LEVELS = ['OFF', 'FATAL', 'ERROR', 'WARN', 'DEBUG', 'TRACE', 'ALL']
 
+# see http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions
 ALL_REGIONS = [
     'us-west-2',
     'us-east-1',
@@ -83,7 +83,6 @@ ALL_REGIONS = [
 ]
 
 # these mappings are taken from http://uec-images.ubuntu.com/query/trusty/server/released.txt
-
 DEFAULT_STOCK_HVM_AMI_IDS = {
     'us-west-2': "ami-9abea4fb",
     'us-east-1': "ami-fce3c696",
@@ -143,8 +142,11 @@ DEFAULT_PROVISIONED_PV_AMI_IDS = {
 }
 assert set(DEFAULT_PROVISIONED_PV_AMI_IDS.keys()).issubset(set(ALL_REGIONS))
 
+# this seems to be the rule on Ubuntu AMIs (rather than /dev/sd*)
 DEVICE_PATH_PREFIX = "/dev/xvd"
+# from https://aws.amazon.com/amazon-linux-ami/instance-type-matrix/
 PV_INSTANCE_TYPE_FAMILIES = ['c1', 'hi1', 'hs1', 'm1', 'm2', 't1']
+# from http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/InstanceStorage.html
 EPHEMERAL_VOLUMES_BY_INSTANCE_TYPE = {
     'c1.medium': 1,
     'c1.xlarge': 4,
@@ -436,11 +438,12 @@ def launch_cluster(cluster_name, verbosity=0, **kwargs):
             volume.add_tags(volume_tags)
         if idx == 0:
             # Tag coordinator
-            instance.add_tags({'cluster-role': "coordinator", 'worker-id': "0"})
+            instance.add_tags({'Name': "%s-coordinator" % cluster_name, 'cluster-role': "coordinator", 'worker-id': "0"})
         else:
             # Tag workers
+            instance_name_tag = "%s-worker-%d-%d" % (cluster_name, ((idx - 1) * kwargs['workers_per_node']) + 1, idx * kwargs['workers_per_node'])
             worker_id_tag = ','.join(map(str, range(((idx - 1) * kwargs['workers_per_node']) + 1, (idx  * kwargs['workers_per_node']) + 1)))
-            instance.add_tags({'cluster-role': "worker", 'worker-id': worker_id_tag})
+            instance.add_tags({'Name': instance_name_tag, 'cluster-role': "worker", 'worker-id': worker_id_tag})
 
 
 def get_security_group_for_cluster(cluster_name, region, profile=None, vpc_id=None):
@@ -995,8 +998,6 @@ def run():
     type=click.Choice(LOG_LEVELS), default=DEFAULTS['cluster_log_level'])
 def create_cluster(cluster_name, **kwargs):
     verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
-    # hack for generating device mappings
-    kwargs['data_volume_count'] = kwargs.get('data_volume_count', 0)
     # we need to validate first without the VPC since it hasn't been determined yet
     validate_aws_settings(kwargs['region'], profile=kwargs['profile'], vpc_id=None, validate_default_vpc=False, prompt_for_credentials=True, verbosity=verbosity)
     vpc_id = None
@@ -1158,8 +1159,8 @@ def destroy_cluster(cluster_name, **kwargs):
     if click.confirm("Are you sure you want to destroy the cluster '%s' in the '%s' region?" % (cluster_name, kwargs['region'])):
         try:
             terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
-        except ValueError as e:
-            click.secho(e.message, fg='red')
+        except Exception as e:
+            click.secho(str(e), fg='red')
             sys.exit(1)
 
 
@@ -1634,24 +1635,25 @@ def validate_vpc_ids(ctx, param, value):
     help="ID of the VPC (Virtual Private Cloud) in which AMI was created (can be specified multiple times, in same order as regions)")
 def delete_image(ami_name, **kwargs):
     regions = kwargs['region']
-    for i, region in enumerate(regions):
-        vpc_id = kwargs['vpc_id'][i] if kwargs['vpc_id'] else None
-        validate_aws_settings(region, kwargs['profile'], vpc_id)
-        ec2 = boto.ec2.connect_to_region(region, profile_name=kwargs['profile'])
-         # In the EC2 API, filters can only express OR,
-        # so we have to implement AND by intersecting results for each filter.
-        if kwargs['vpc_id']:
-            vpc_id = kwargs['vpc_id'][i]
-            images_by_vpc = ec2.get_all_images(filters={'vpc-id': vpc_id})
-            images = [img for img in images_by_vpc if img.name == ami_name]
-        else:
-            images = ec2.get_all_images(filters={'name': ami_name})
-        if images:
-            click.echo("Deregistering AMI with name '%s' (ID: %s) in region '%s'..." % (ami_name, images[0].id, region))
-            images[0].deregister(delete_snapshot=True)
-            # TODO: wait here for image to become unavailable
-        else:
-            click.secho("No AMI found in region '%s' with name '%s'" % (region, ami_name), fg='red')
+    if click.confirm("Are you sure you want to delete the AMI '%s' in the %s regions?" % (ami_name, ', '.join(regions))):
+        for i, region in enumerate(regions):
+            vpc_id = kwargs['vpc_id'][i] if kwargs['vpc_id'] else None
+            validate_aws_settings(region, kwargs['profile'], vpc_id)
+            ec2 = boto.ec2.connect_to_region(region, profile_name=kwargs['profile'])
+            # In the EC2 API, filters can only express OR,
+            # so we have to implement AND by intersecting results for each filter.
+            if kwargs['vpc_id']:
+                vpc_id = kwargs['vpc_id'][i]
+                images_by_vpc = ec2.get_all_images(filters={'vpc-id': vpc_id})
+                images = [img for img in images_by_vpc if img.name == ami_name]
+            else:
+                images = ec2.get_all_images(filters={'name': ami_name})
+            if images:
+                click.echo("Deregistering AMI with name '%s' (ID: %s) in region '%s'..." % (ami_name, images[0].id, region))
+                images[0].deregister(delete_snapshot=True)
+                # TODO: wait here for image to become unavailable
+            else:
+                click.secho("No AMI found in region '%s' with name '%s'" % (region, ami_name), fg='red')
 
 
 @run.command('list-images')
