@@ -5,7 +5,7 @@ globals {
   debug_level = 0
   max_udp_msg_len = 1472
   mute = no
-{% if ansible_ec2_public_ipv4 in groups['tag_cluster_role_coordinator'] %}
+{% if public_ip_address in groups['coordinator'][0] %}
   deaf = no
 {% else %}
   deaf = yes
@@ -29,12 +29,12 @@ host {
 }
 
 udp_send_channel {
-  host = {{ hostvars[groups['tag_cluster_role_coordinator'][0]]['ansible_ec2_local_hostname'] }}
+  host = {{ hostvars[groups['coordinator'][0]]['private_dns_name'] }}
   port = {{ ganglia_monitor_port }}
   ttl = 1
 }
 
-{% if ansible_ec2_public_ipv4 in groups['tag_cluster_role_coordinator'] %}
+{% if public_ip_address in groups['coordinator'][0] %}
 udp_recv_channel {
   port = {{ ganglia_monitor_port }}
 }

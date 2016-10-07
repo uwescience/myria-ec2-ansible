@@ -1,6 +1,6 @@
 description "yarn-slave"
 
-{% if ansible_ec2_public_ipv4 in groups['tag_cluster_role_coordinator'] %}
+{% if public_ip_address in groups['coordinator'][0] %}
 start on started yarn-master
 stop on stopped yarn-master
 {%  else %}

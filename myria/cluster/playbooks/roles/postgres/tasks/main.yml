@@ -142,7 +142,7 @@
   become: yes
   become_user: postgres
   failed_when: "(result | failed) and ('already exists' not in result.stderr)"
-  with_items: "{{ ec2_tag_worker_id.split(',') }}"
+  with_items: "{{ tags['worker-id'].split(',') }}"
   when: STORAGE_TYPE == 'local'
   notify: restart postgresql
   tags:
@@ -154,7 +154,7 @@
   become: yes
   become_user: postgres
   failed_when: "(result | failed) and ('already exists' not in result.stderr)"
-  with_items: "{{ ec2_tag_worker_id.split(',') }}"
+  with_items: "{{ tags['worker-id'].split(',') }}"
   when: STORAGE_TYPE == 'ebs'
   notify: restart postgresql
   tags:
@@ -164,7 +164,7 @@
   postgresql_user: db=myria_{{item}} name={{database_username}} password={{database_password}} priv=ALL
   become: yes
   become_user: postgres
-  with_items: "{{ ec2_tag_worker_id.split(',') }}"
+  with_items: "{{ tags['worker-id'].split(',') }}"
   notify: restart postgresql
   tags:
     - configure

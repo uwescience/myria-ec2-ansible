@@ -52,8 +52,6 @@ VERSION = pkg_resources.get_distribution("myria-cluster").version
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
 SCRIPT_NAME =  os.path.basename(sys.argv[0])
-# this is necessary because pip loses executable permissions and ansible requires scripts to be executable
-INVENTORY_SCRIPT_PATH = find_executable("ec2.py")
 # we want to use only the Ansible executable in our dependent package
 ANSIBLE_EXECUTABLE_PATH = find_executable("ansible-playbook")
 
@@ -184,6 +182,46 @@ EPHEMERAL_VOLUMES_BY_INSTANCE_TYPE = {
     'd2.8xlarge': 24,
     'hs1.8xlarge': 24,
 }
+
+# from http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EBSOptimized.html
+EBS_OPTIMIZED_INSTANCE_TYPES = [
+    'c1.xlarge',
+    'c3.xlarge',
+    'c3.2xlarge',
+    'c3.4xlarge',
+    'c4.large',
+    'c4.xlarge',
+    'c4.2xlarge',
+    'c4.4xlarge',
+    'c4.8xlarge',
+    'd2.xlarge',
+    'd2.2xlarge',
+    'd2.4xlarge',
+    'd2.8xlarge',
+    'g2.2xlarge',
+    'i2.xlarge',
+    'i2.2xlarge',
+    'i2.4xlarge',
+    'm1.large',
+    'm1.xlarge',
+    'm2.2xlarge',
+    'm2.4xlarge',
+    'm3.xlarge',
+    'm3.2xlarge',
+    'm4.large',
+    'm4.xlarge',
+    'm4.2xlarge',
+    'm4.4xlarge',
+    'm4.10xlarge',
+    'm4.16xlarge',
+    'p2.xlarge',
+    'p2.8xlarge',
+    'p2.16xlarge',
+    'r3.xlarge',
+    'r3.2xlarge',
+    'r3.4xlarge',
+    'x1.32xlarge',
+]
 
 InstanceTypeConfig = namedtuple("InstanceTypeConfig", [
     "node_mem_gb",
@@ -321,22 +359,6 @@ or 3) delete the key pair '{key_pair}' from the {region} region, and rerun the s
             sys.exit(1)
 
 
-def write_inventory_file(cluster_name, region, profile, verbosity=0):
-    ec2_ini_tmpfile = NamedTemporaryFile(delete=False)
-    if verbosity > 0:
-        click.echo("Writing Ansible dynamic inventory file to %s" % ec2_ini_tmpfile.name)
-    env = jinja2.Environment(loader=jinja2.FileSystemLoader(playbooks_dir))
-    template = env.get_template("ec2.ini.j2")
-    template_args = dict(REGION=region, CLUSTER_NAME=cluster_name)
-    # We can't pass in None for a missing profile or the template won't behave correctly.
-    if profile:
-        template_args.update(PROFILE=profile)
-    ec2_ini_tmpfile.write(template.render(template_args))
-    # THIS IS CRITICAL (ec2.py won't see full file contents otherwise)
-    ec2_ini_tmpfile.flush()
-    return ec2_ini_tmpfile.name
-
-
 def write_secure_file(path, content):
     mode = stat.S_IRUSR | stat.S_IWUSR  # This is 0o600 in octal and 384 in decimal.
     umask_original = os.umask(0)
@@ -348,7 +370,7 @@ def write_secure_file(path, content):
     handle.close()
 
 
-def launch_cluster(cluster_name, verbosity=0, **kwargs):
+def launch_cluster(cluster_name, app_name="myria", verbosity=0, **kwargs):
     # Create EC2 key pair if absent
     create_key_pair_and_private_key_file(kwargs['key_pair'], kwargs['private_key_file'], kwargs['region'],
             profile=kwargs['profile'], verbosity=verbosity)
@@ -356,10 +378,12 @@ def launch_cluster(cluster_name, verbosity=0, **kwargs):
     group = create_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'],
             vpc_id=kwargs['vpc_id'], verbosity=verbosity)
     # Tag security group to designate as Myria cluster
-    group_tags = {'app': "myria", 'storage-type': kwargs['storage_type']}
-    if kwargs['iam_user']:
+    group_tags = {'app': app_name}
+    if kwargs.get('storage_type'):
+        group_tags.update({'storage-type': kwargs['storage_type']})
+    if kwargs.get('iam_user'):
         group_tags.update({'user:Name': kwargs['iam_user']})
-    if kwargs['spot_price']:
+    if kwargs.get('spot_price'):
         group_tags.update({'spot-price': kwargs['spot_price']})
     group.add_tags(group_tags)
     # Allow this group complete access to itself
@@ -382,8 +406,8 @@ def launch_cluster(cluster_name, verbosity=0, **kwargs):
                      instance_type=kwargs['instance_type'],
                      placement=kwargs['zone'],
                      block_device_map=kwargs.get('device_mapping'),
-                     instance_profile_name=kwargs['role'],
-                     ebs_optimized=(kwargs['storage_type'] == 'ebs'))
+                     instance_profile_name=kwargs.get('role'),
+                     ebs_optimized=(kwargs.get('storage_type') == 'ebs') and (kwargs['instance_type'] in EBS_OPTIMIZED_INSTANCE_TYPES))
     if kwargs.get('subnet_id'):
         interface = NetworkInterfaceSpecification(subnet_id=kwargs['subnet_id'],
                                                   groups=[group.id],
@@ -423,17 +447,17 @@ def launch_cluster(cluster_name, verbosity=0, **kwargs):
         click.echo("Tagging instances...")
     instances = sorted((instance for instance in launched_instances), key=lambda i: i.private_dns_name)
     for idx, instance in enumerate(instances):
-        instance_tags = {'app': "myria", 'cluster-name': cluster_name}
-        if kwargs['iam_user']:
+        instance_tags = {'app': app_name, 'cluster-name': cluster_name}
+        if kwargs.get('iam_user'):
             instance_tags.update({'user:Name': kwargs['iam_user']})
-        if kwargs['spot_price']:
+        if kwargs.get('spot_price'):
             instance_tags.update({'spot-price': kwargs['spot_price']})
         instance.add_tags(instance_tags)
         # Tag volumes
         volumes = ec2.get_all_volumes(filters={'attachment.instance-id': instance.id})
         for volume in volumes:
-            volume_tags = {'app': "myria", 'cluster-name': cluster_name}
-            if kwargs['iam_user']:
+            volume_tags = {'app': app_name, 'cluster-name': cluster_name}
+            if kwargs.get('iam_user'):
                 volume_tags.update({'user:Name': kwargs['iam_user']})
             volume.add_tags(volume_tags)
         if idx == 0:
@@ -760,8 +784,8 @@ def validate_data_volume_count(ctx, param, value):
     if value is not None:
         if ctx.params.get('storage_type') == "local":
             raise click.BadParameter("Cannot specify --data-volume-count with --storage-type=local")
-        if value > ctx.params.get('workers_per_node'):
-            raise click.BadParameter("--data-volume-count cannot exceed number of workers per node")
+        if value > ctx.params['workers_per_node']:
+            raise click.BadParameter("--data-volume-count cannot exceed number of workers per node (%d)" % ctx.params['workers_per_node'])
     elif ctx.params.get('storage_type') == "ebs":
         return DEFAULTS['data_volume_count']
     else:
@@ -834,16 +858,16 @@ def validate_workers_per_node(ctx, param, value):
 
 
 def get_vpc_from_subnet(subnet_id, region, profile=None, verbosity=0):
-        vpc_conn = boto.vpc.connect_to_region(region, profile_name=profile)
-        try:
-            subnet = vpc_conn.get_all_subnets(subnet_ids=[subnet_id])[0]
-            return subnet.vpc_id
-        except Exception as e:
-            if verbosity > 0:
-                click.secho(str(e), fg='red')
-            if verbosity > 1:
-                click.secho(traceback.format_exc(), fg='red')
-            return None
+    vpc_conn = boto.vpc.connect_to_region(region, profile_name=profile)
+    try:
+        subnet = vpc_conn.get_all_subnets(subnet_ids=[subnet_id])[0]
+        return subnet.vpc_id
+    except Exception as e:
+        if verbosity > 0:
+            click.secho(str(e), fg='red')
+        if verbosity > 1:
+            click.secho(traceback.format_exc(), fg='red')
+        return None
 
 
 def get_iam_user(region, profile=None, verbosity=0):
@@ -885,9 +909,7 @@ def get_block_device_mapping(**kwargs):
     return device_mapping
 
 
-# If this is called with `local=False`, then the key `EC2_INI_PATH` in `extra_vars`
-# must be set to a valid instance of the template `myria/cluster/playbooks/ec2.ini.j2`.
-def run_playbook(playbook, private_key_file, local=False, extra_vars={}, tags=[], max_retries=MAX_RETRIES_DEFAULT, verbosity=0):
+def run_playbook(playbook, private_key_file, extra_vars={}, tags=[], limit_hosts=[], max_retries=MAX_RETRIES_DEFAULT, verbosity=0):
     # this should be done in an env var but Ansible maintainers are too stupid to support it
     extra_vars.update(ansible_python_interpreter='/usr/bin/env python')
     cluster_name = extra_vars['CLUSTER_NAME']
@@ -895,22 +917,23 @@ def run_playbook(playbook, private_key_file, local=False, extra_vars={}, tags=[]
     profile = extra_vars.get('PROFILE')
     vpc_id = extra_vars.get('VPC_ID')
     playbook_path = os.path.join(playbooks_dir, playbook)
-    inventory = "localhost," if local else INVENTORY_SCRIPT_PATH # comma is not a typo, Ansible is just stupid
+    inventory = "localhost," # comma is not a typo, Ansible is just stupid
     # Override default retry files directory
     ansible_retry_tmpdir = mkdtemp()
     retry_filename = os.path.join(ansible_retry_tmpdir, os.path.splitext(os.path.basename(playbook))[0] + ".retry")
     env = dict(os.environ, ANSIBLE_RETRY_FILES_SAVE_PATH=ansible_retry_tmpdir)
-    if 'EC2_INI_PATH' in extra_vars:
-        env.update(EC2_INI_PATH=extra_vars['EC2_INI_PATH'])
     # see https://github.com/ansible/ansible/pull/9404/files
     retries = 0
     failed_hosts = []
     while True:
-        ansible_args = [ANSIBLE_EXECUTABLE_PATH, playbook_path, "--inventory", inventory, "--extra-vars", json.dumps(extra_vars), "--private-key", private_key_file]
+        if failed_hosts:
+            limit_hosts = failed_hosts
+        if limit_hosts:
+            extra_vars['LIMIT_HOSTS'] = limit_hosts
+        # --module-path is for 2.2 version of ec2_remote_facts.py, remove (along with myria/cluster/playbooks/ec2_remote_facts.py) when Ansible 2.2 is released
+        ansible_args = [ANSIBLE_EXECUTABLE_PATH, playbook_path, "--inventory", inventory, "--extra-vars", json.dumps(extra_vars), "--private-key", private_key_file, "--module-path", playbooks_dir]
         if tags:
             ansible_args.extend(["--tags", ','.join(tags)])
-        if failed_hosts:
-            ansible_args.extend(["--limit", "@%s" % retry_filename])
         if verbosity > 0:
             ansible_args.append("-" + ('v' * verbosity))
         status = subprocess.call(ansible_args, env=env)
@@ -992,7 +1015,7 @@ def run():
     help="Physical memory (in GB) on each EC2 instance available for Myria processes [default: %s]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].node_mem_gb)
 @click.option('--node-vcores', type=int, callback=validate_node_vcores,
     help="Number of virtual CPUs on each EC2 instance available for Myria processes [default: %d]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].node_vcores)
-@click.option('--workers-per-node', type=int, callback=validate_workers_per_node,
+@click.option('--workers-per-node', type=int, callback=validate_workers_per_node, is_eager=True,
     help="Number of Myria workers per cluster node [default: %d]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].workers_per_node)
 @click.option('--cluster-log-level', show_default=True,
     type=click.Choice(LOG_LEVELS), default=DEFAULTS['cluster_log_level'])
@@ -1067,24 +1090,21 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
         click.secho("Unexpected error, destroying cluster...", fg='red')
         terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
         sys.exit(1)
-    # Write ec2.ini file for dynamic inventory
-    ec2_ini_file = write_inventory_file(cluster_name, kwargs['region'], kwargs['profile'], verbosity=verbosity)
     # run remote playbook to provision EC2 instances
     extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None)
     extra_vars.update(CLUSTER_NAME=cluster_name)
-    extra_vars.update(VPC_ID=vpc_id)
+    if vpc_id:
+        extra_vars.update(VPC_ID=vpc_id)
     if iam_user:
         extra_vars.update(IAM_USER=iam_user)
     extra_vars.update(ALL_VOLUMES=all_volumes)
     extra_vars.update(EBS_VOLUMES=ebs_volumes)
     extra_vars.update(EPHEMERAL_VOLUMES=ephemeral_volumes)
-    extra_vars.update(EC2_INI_PATH=ec2_ini_file)
 
     if verbosity > 2:
         click.echo(json.dumps(extra_vars))
 
-    all_provisioned_ami_ids = DEFAULT_PROVISIONED_HVM_AMI_IDS.values() + DEFAULT_PROVISIONED_PV_AMI_IDS.values()
-    tags = ['configure'] if kwargs['ami_id'] in all_provisioned_ami_ids else ['provision', 'configure']
+    tags = ['provision', 'configure'] if kwargs['unprovisioned'] else ['configure']
     if not run_playbook("remote.yml", kwargs['private_key_file'], extra_vars=extra_vars, tags=tags, verbosity=verbosity):
         click.secho("Failed to provision instances, destroying cluster...", fg='red')
         terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
@@ -1111,6 +1131,7 @@ Your new Myria cluster '{cluster_name}' has been launched on Amazon EC2 in the '
 
 View the Myria worker IDs and public hostnames of all nodes in this cluster (the coordinator has worker ID 0):
 {script_name} list {cluster_name} {options}
+
 """ + (
 """Stop this cluster:
 {script_name} stop {cluster_name} {options}
@@ -1196,7 +1217,7 @@ def stop_cluster(cluster_name, **kwargs):
             instance.update(validate=True)
             if instance.state != "stopped":
                 if verbosity > 0:
-                    click.secho("Instance %s not stopped, waiting 60 seconds..." % instance.id, fg='yellow')
+                    click.secho("Not all instances stopped, waiting 60 seconds...", fg='yellow')
                 sleep(60)
                 break # break out of for loop
         else: # all instances were stopped, so break out of while loop
@@ -1208,7 +1229,7 @@ def stop_cluster(cluster_name, **kwargs):
     if kwargs['vpc_id']:
         options_str += " --vpc-id %s" % kwargs['vpc_id']
     click.secho("""
-Your Myria cluster '{cluster_name}' in the AWS '{region}' region has been successfully stopped.
+Your Myria cluster '{cluster_name}' in the '{region}' region has been successfully stopped.
 You can start this cluster again by running
 
 {script_name} start {cluster_name} {options}
@@ -1248,7 +1269,7 @@ def start_cluster(cluster_name, **kwargs):
     if not wait_for_all_workers_online(cluster_name, kwargs['region'], profile=kwargs['profile'],
             vpc_id=kwargs['vpc_id'], verbosity=verbosity):
         click.secho("""
-The Myria service on your cluster '{cluster_name}' in the AWS '{region}' region returned an error.
+The Myria service on your cluster '{cluster_name}' in the '{region}' region returned an error.
 Please refer to the error message above for diagnosis.
 """.format(cluster_name=cluster_name, region=kwargs['region']), fg='red')
         sys.exit(1)
@@ -1295,19 +1316,15 @@ def update_cluster(cluster_name, **kwargs):
         click.secho("No cluster with name '%s' exists in region '%s'." % (cluster_name, kwargs['region']), fg='red')
         sys.exit(1)
 
-    # generate Ansible EC2 dynamic inventory file
-    ec2_ini_file = write_inventory_file(cluster_name, kwargs['region'], kwargs['profile'], verbosity=verbosity)
-
     extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None)
     extra_vars.update(CLUSTER_NAME=cluster_name)
-    extra_vars.update(EC2_INI_PATH=ec2_ini_file)
 
     if verbosity > 1:
         for k, v in extra_vars.iteritems():
             click.echo("%s: %s" % (k, v))
 
     # run remote playbook to update software on EC2 instances
-    click.echo("Updating Myria software on coordinator...")
+    click.echo("Updating Myria software on cluster...")
     if (run_playbook("remote.yml", kwargs['private_key_file'], extra_vars=extra_vars,
             tags=['update'], verbosity=verbosity) and
         wait_for_all_workers_online(cluster_name, kwargs['region'], profile=kwargs['profile'],
@@ -1479,8 +1496,6 @@ def create_image(ami_name, **kwargs):
     verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
     vpc_id = kwargs.get('vpc_id')
     iam_user = get_iam_user(kwargs['region'], profile=kwargs['profile'], verbosity=verbosity)
-    ec2_ini_tmpfile = NamedTemporaryFile(delete=False)
-
     validate_aws_settings(kwargs['region'], kwargs['profile'], vpc_id, verbosity=verbosity)
 
     # abort or deregister if AMI with the same name already exists
@@ -1495,11 +1510,11 @@ def create_image(ami_name, **kwargs):
                 # TODO: wait here for image to become unavailable, or we can hit a race at image creation
             else:
                 click.secho("""
-    AMI '{ami_name}' already exists in the '{region}' region.
-    If you wish to create a new AMI with the same name,
-    first deregister the existing AMI from the AWS console or
-    run this command with the `--overwrite` option.
-    """.format(ami_name=ami_name, region=region), fg='red')
+AMI '{ami_name}' already exists in the '{region}' region.
+If you wish to create a new AMI with the same name,
+first deregister the existing AMI from the AWS console or
+run this command with the `--overwrite` option.
+""".format(ami_name=ami_name, region=region), fg='red')
                 sys.exit(1)
 
     # abort or delete group if group already exists
@@ -1520,6 +1535,19 @@ instance_str + """delete security group '{ami_name}' (ID: {group_id}) from the A
 """.format(ami_name=ami_name, region=kwargs['region'], group_id=group_id, instance_id=instance_id), fg='red')
             sys.exit(1)
 
+    extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None)
+    extra_vars.update(AMI_NAME=ami_name)
+    extra_vars.update(CLUSTER_NAME=ami_name)
+    extra_vars.update(CLUSTER_NAME=ami_name)
+    if vpc_id:
+        extra_vars.update(VPC_ID=vpc_id)
+    if iam_user:
+        extra_vars.update(IAM_USER=iam_user)
+
+    if verbosity > 1:
+        for k, v in extra_vars.iteritems():
+            click.echo("%s: %s" % (k, v))
+
     # install keyboard interrupt handler to destroy partially-deployed cluster
     # TODO: signal handlers are inherited by each child process spawned by Ansible,
     # so messages are (harmlessly) duplicated for each process.
@@ -1534,22 +1562,15 @@ instance_str + """delete security group '{ami_name}' (ID: {group_id}) from the A
         sys.exit(1)
 
     signal.signal(signal.SIGINT, signal_handler)
-
-    extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None)
-    extra_vars.update(AMI_NAME=ami_name)
-    extra_vars.update(CLUSTER_NAME=ami_name)
-    extra_vars.update(VPC_ID=vpc_id)
-    extra_vars.update(EC2_INI_PATH=ec2_ini_tmpfile.name)
-    if iam_user:
-        extra_vars.update(IAM_USER=iam_user)
-
-    if verbosity > 1:
-        for k, v in extra_vars.iteritems():
-            click.echo("%s: %s" % (k, v))
-
-    # run local playbook to launch EC2 instances
-    click.echo("Launching AMI builder instance...")
-    if not run_playbook("launch-ami-builder.yml", kwargs['private_key_file'], local=True, extra_vars=extra_vars, max_retries=0, verbosity=verbosity):
+    try:
+        # launch AMI builder instance
+        launch_cluster(ami_name, app_name="myria-ami-builder", iam_user=iam_user, vpc_id=vpc_id,
+            ami_id=kwargs['base_ami_id'], cluster_size=1, verbosity=verbosity, **kwargs)
+    except Exception as e:
+        if verbosity > 0:
+            click.secho(str(e), fg='red')
+        if verbosity > 1:
+            click.secho(traceback.format_exc(), fg='red')
         click.secho("Unexpected error launching AMI builder instance, destroying instance...", fg='red')
         terminate_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
         sys.exit(1)

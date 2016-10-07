@@ -40,7 +40,7 @@
 # data_source "my grid" 50 1.3.4.7:8655 grid.org:8651 grid-backup.org:8651
 # data_source "another source" 1.3.4.7:8655  1.3.4.8
 
-data_source {{ CLUSTER_NAME }} {{ gmetad_poll_interval }} {{ hostvars[groups['tag_cluster_role_coordinator'][0]]['ansible_ec2_local_hostname'] }}:{{ ganglia_monitor_port }}
+data_source {{ CLUSTER_NAME }} {{ gmetad_poll_interval }} {{ hostvars[groups['coordinator'][0]]['private_dns_name'] }}:{{ ganglia_monitor_port }}
 
 #
 # Round-Robin Archives
@@ -78,7 +78,7 @@ gridname "{{ CLUSTER_NAME }}"
 # website on this machine.
 # default: "http://hostname/ganglia/",
 #   where hostname is the name of this machine, as defined by gethostname().
-authority "http://{{ hostvars[groups['tag_cluster_role_coordinator'][0]]['ansible_ec2_public_hostname'] }}:{{ ganglia_web_port }}/"
+authority "http://{{ hostvars[groups['coordinator'][0]]['public_dns_name'] }}:{{ ganglia_web_port }}/"
 #
 #-------------------------------------------------------------------------------
 # List of machines this gmetad will share XML with. Localhost

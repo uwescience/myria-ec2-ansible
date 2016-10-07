@@ -6,19 +6,78 @@
 # The only way to achieve the same effect within a playbook is to use variables and
 # conditionals instead of tags, and we don't want to go there (yet).
 
-- name: Gather EC2 facts
-  hosts: ec2
-  remote_user: ubuntu
-  become: yes
-  gather_facts: true
+- name: Configure EC2 inventory
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  tags: ['always']
   tasks:
-    - ec2_facts:
+  - ec2_remote_facts:
+      region: "{{ REGION }}"
+      profile: "{{ PROFILE|default(omit) }}"
+      filters:
+        instance.group-name: "{{ CLUSTER_NAME }}"
+        vpc-id: "{{ VPC_ID|default('*') }}"
+        "tag:cluster-role": "coordinator"
+    register: coordinator_facts
+  - debug: var=coordinator_facts
+  - ec2_remote_facts:
+      region: "{{ REGION }}"
+      profile: "{{ PROFILE|default(omit) }}"
+      filters:
+        instance.group-name: "{{ CLUSTER_NAME }}"
+        vpc-id: "{{ VPC_ID|default('*') }}"
+        "tag:cluster-role": "worker"
+    register: worker_facts
+  - debug: var=worker_facts
+  - ec2_remote_facts:
+      region: "{{ REGION }}"
+      profile: "{{ PROFILE|default(omit) }}"
+      filters:
+        instance.group-name: "{{ CLUSTER_NAME }}"
+        vpc-id: "{{ VPC_ID|default('*') }}"
+        ip-address: "{{ LIMIT_HOSTS|default('*') }}"
+    register: cluster_facts
+  - debug: var=cluster_facts
+  - add_host:
+      name: "{{ item.public_ip_address }}"
+      ansible_ssh_host: "{{ item.public_ip_address }}"
+      private_ip_address: "{{ item.private_ip_address }}"
+      public_ip_address: "{{ item.public_ip_address }}"
+      private_dns_name: "{{ item.private_dns_name }}"
+      public_dns_name: "{{ item.public_dns_name }}"
+      tags: "{{ item.tags }}"
+      groups: coordinator
+    changed_when: false
+    with_items: "{{ coordinator_facts.instances }}"
+  - add_host:
+      name: "{{ item.public_ip_address }}"
+      ansible_ssh_host: "{{ item.public_ip_address }}"
+      private_ip_address: "{{ item.private_ip_address }}"
+      public_ip_address: "{{ item.public_ip_address }}"
+      private_dns_name: "{{ item.private_dns_name }}"
+      public_dns_name: "{{ item.public_dns_name }}"
+      tags: "{{ item.tags }}"
+      groups: workers
+    changed_when: false
+    with_items: "{{ worker_facts.instances }}"
+  - add_host:
+      name: "{{ item.public_ip_address }}"
+      ansible_ssh_host: "{{ item.public_ip_address }}"
+      private_ip_address: "{{ item.private_ip_address }}"
+      public_ip_address: "{{ item.public_ip_address }}"
+      private_dns_name: "{{ item.private_dns_name }}"
+      public_dns_name: "{{ item.public_dns_name }}"
+      tags: "{{ item.tags }}"
+      groups: cluster
+    changed_when: false
+    with_items: "{{ cluster_facts.instances }}"
 
 - name: Configure common functionality on all nodes
-  hosts: ec2
+  hosts: cluster
   remote_user: ubuntu
   become: yes
-  gather_facts: false
+  gather_facts: yes
   roles:
     - basenode
     - yarn-common
@@ -26,52 +85,52 @@
     - ganglia-monitor
 
 - name: Configure YARN RM
-  hosts: tag_cluster_role_coordinator
+  hosts: coordinator
   remote_user: ubuntu
   become: yes
-  gather_facts: false
+  gather_facts: no
   roles:
     - yarn-master
 
 - name: Configure YARN NM
-  hosts: ec2
+  hosts: cluster
   remote_user: ubuntu
   become: yes
-  gather_facts: false
+  gather_facts: no
   roles:
     - yarn-slave
 
 - name: Configure Ganglia UI on coordinator
-  hosts: tag_cluster_role_coordinator
+  hosts: coordinator
   remote_user: ubuntu
   become: yes
-  gather_facts: false
+  gather_facts: no
   roles:
     - ganglia-metad
     - ganglia-web
 
 - name: Configure and launch MyriaX on coordinator
-  hosts: tag_cluster_role_coordinator
+  hosts: coordinator
   remote_user: ubuntu
   become: yes
-  gather_facts: false
+  gather_facts: no
   roles:
     - myria-python
     - myria
 
 - name: Install and launch myria-web on coordinator
-  hosts: tag_cluster_role_coordinator
+  hosts: coordinator
   remote_user: ubuntu
   become: yes
-  gather_facts: false
+  gather_facts: no
   roles:
     - gae
     - myria-web
 
 - name: Install and launch jupyter-notebook on coordinator
-  hosts: tag_cluster_role_coordinator
+  hosts: coordinator
   remote_user: ubuntu
   become: yes
-  gather_facts: false
+  gather_facts: no
   roles:
     - jupyter

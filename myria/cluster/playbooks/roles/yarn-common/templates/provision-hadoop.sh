@@ -1,11 +1,11 @@
 #!/bin/bash
 
 SCRIPT_DIR={{ soft_link_base_path }}/hadoop/pbin
-MASTER_IP={{ hostvars[groups['tag_cluster_role_coordinator'][0]]['ansible_ec2_local_ipv4'] }}
-NUM_SLAVES={{ groups['ec2'] | length }}
+MASTER_IP={{ hostvars[groups['coordinator'][0]]['private_ip_address'] }}
+NUM_SLAVES={{ groups['cluster'] | length }}
 SLAVE_IPS={% set comma = joiner(",") %}
-                              {%- for host in groups['ec2'] -%}
-                                {{ comma() }}{{ hostvars[host]['ansible_ec2_local_ipv4'] }}
+                              {%- for host in groups['cluster'] -%}
+                                {{ comma() }}{{ hostvars[host]['private_ip_address'] }}
                               {%- endfor %}
 
 # preceding blank line is necessary!

@@ -18,6 +18,7 @@
   git: repo="{{myria_repository_url}}" dest="{{myria_path}}" version="{{myria_branch}}" update=yes force=yes
   become: yes
   become_user: "{{myria_user}}"
+  register: git
   tags:
     - provision
     - update
@@ -34,6 +35,7 @@
   shell: "./gradlew clean"
   args:
     chdir: "{{myria_path}}"
+  when: git.changed
   tags:
     - update
 
@@ -44,6 +46,7 @@
   args:
     chdir: "{{myria_path}}"
     creates: "{{myria_path}}/build/libs"
+  when: git.changed
   tags:
     - provision
     - update
@@ -52,8 +55,8 @@
   become: yes
   become_user: "{{myria_user}}"
   shell: "TEMPFILE=$(mktemp) &&
-          ./create_deployment.py {{myria_path}} {{ hostvars[groups['tag_cluster_role_coordinator'][0]]['ansible_ec2_local_hostname'] }} \
-                                                    {% for host in groups['tag_cluster_role_worker'] %} {% for i in range((WORKERS_PER_NODE|int)) %} {{ hostvars[host]['ansible_ec2_local_hostname'] }} {% endfor %} {% endfor %} \
+          ./create_deployment.py {{myria_path}} {{ hostvars[groups['coordinator'][0]]['private_dns_name'] }} \
+                                                    {% for host in groups['workers'] %} {% for i in range((WORKERS_PER_NODE|int)) %} {{ hostvars[host]['private_dns_name'] }} {% endfor %} {% endfor %} \
                                                     --rest-port {{myria_rest_port}} \
                                                     --coordinator-port {{coordinator_port}} \
                                                     --worker-base-port {{worker_base_port}} \
@@ -64,8 +67,8 @@
                                                     --worker-memory-size-gb {{worker_mem_gb}} \
                                                     --master-cores-number {{coordinator_vcores}} \
                                                     --worker-cores-number {{worker_vcores}} \
-                                                    --worker-databases {% for i in range((WORKERS_PER_NODE|int) * (groups['tag_cluster_role_worker']|length)) %} myria_{{i+1}} {% endfor %} \
-                                                    --persist-uri hdfs://{{hostvars[groups['tag_cluster_role_coordinator'][0]]['ansible_ec2_local_hostname']}}:{{namenode_port}}
+                                                    --worker-databases {% for i in range((WORKERS_PER_NODE|int) * (groups['workers']|length)) %} myria_{{i+1}} {% endfor %} \
+                                                    --persist-uri hdfs://{{hostvars[groups['coordinator'][0]]['private_dns_name']}}:{{namenode_port}}
           > ${TEMPFILE} && mv ${TEMPFILE} {{myria_path}}/myriadeploy/deployment.cfg"
   args:
     chdir: "{{myria_path}}/myriadeploy"
@@ -83,5 +86,6 @@
 - name: Bounce Myria service on update
   command: /bin/true
   notify: restart myria
+  when: git.changed
   tags:
     - update
