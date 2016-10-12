@@ -1,6 +1,7 @@
 ---
 myria_repository_url: https://github.com/uwescience/myria.git
 myria_path: '{{install_base_path}}/myria'
+myria_jar: '{{myria_path}}/build/libs/myria-{{myria_version}}-all.jar'
 myria_branch: master
 namenode_port: 8020
 coordinator_port: 8001

@@ -23,7 +23,10 @@ setup(
         'setuptools_git >= 1.1',
     ],
     install_requires=[
-        'ansible >= 2.0.0',
+        # 'ansible >= 2.0.0',
+        # 2.2 introduced regression in git module:
+        # https://github.com/ansible/ansible-modules-core/issues/5504
+        'ansible == 2.1.2.0',
         'click >= 6.6',
         'boto >= 2.40.0',
         'PyYAML >= 3.11',
@@ -34,7 +37,4 @@ setup(
             'myria-cluster=myria.cluster.scripts.cli:run',
         ]
     },
-    scripts=[
-        'myria/cluster/playbooks/ec2.py',
-    ],
 )

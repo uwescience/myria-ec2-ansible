@@ -25,28 +25,24 @@
 
 # TODO: remove this code and pass umask to git module when https://github.com/ansible/ansible/issues/10279 is resolved
 - name: Grant primary group write permissions
-  file: path={{myria_path}} mode="g+w" recurse=yes
+  file: path="{{myria_path}}" mode="g+w" recurse=yes
   tags:
     - provision
 
-- name: Clean Myria build
-  become: yes
-  become_user: "{{myria_user}}"
-  shell: "./gradlew clean"
-  args:
-    chdir: "{{myria_path}}"
-  when: git.changed
+- name: Check for Myria binaries
+  stat: path="{{myria_jar}}"
+  register: myria_jar_stat
   tags:
+    - provision
     - update
 
 - name: Compile Myria
   become: yes
   become_user: "{{myria_user}}"
-  shell: "./gradlew shadowJar"
+  shell: "./gradlew clean shadowJar"
   args:
     chdir: "{{myria_path}}"
-    creates: "{{myria_path}}/build/libs"
-  when: git.changed
+  when: git.changed or (not (myria_jar_stat.stat.exists))
   tags:
     - provision
     - update
@@ -56,7 +52,7 @@
   become_user: "{{myria_user}}"
   shell: "TEMPFILE=$(mktemp) &&
           ./create_deployment.py {{myria_path}} {{ hostvars[groups['coordinator'][0]]['private_dns_name'] }} \
-                                                    {% for host in groups['workers'] %} {% for i in range((WORKERS_PER_NODE|int)) %} {{ hostvars[host]['private_dns_name'] }} {% endfor %} {% endfor %} \
+                                                    {% for host in groups['workers'] %} {% for _ in range((WORKERS_PER_NODE|int)) %} {{ hostvars[host]['private_dns_name'] }} {% endfor %} {% endfor %}
                                                     --rest-port {{myria_rest_port}} \
                                                     --coordinator-port {{coordinator_port}} \
                                                     --worker-base-port {{worker_base_port}} \
@@ -72,10 +68,11 @@
           > ${TEMPFILE} && mv ${TEMPFILE} {{myria_path}}/myriadeploy/deployment.cfg"
   args:
     chdir: "{{myria_path}}/myriadeploy"
-    creates: "{{myria_path}}/myriadeploy/deployment.cfg"
+    # creates: "{{myria_path}}/myriadeploy/deployment.cfg"
   notify: restart myria
   tags:
     - configure
+    - update-workers
 
 - name: Install Myria service
   template: src=service.conf.j2 dest=/etc/init/myria.conf backup=yes mode=0644

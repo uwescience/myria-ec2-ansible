@@ -1,5 +1,5 @@
 ---
-# ansible-playbook "$MYRIA_ANSIBLE_DIR/site.yml" --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE"
+# ansible-playbook "$MYRIA_ANSIBLE_DIR/remote.yml" --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE"
 # NB: this playbook is expected to be called with either `--tags=provision`, `--tags=configure` or `--tags=update`!
 # By (mis)design, it is impossible to filter by tags within a playbook itself
 # (tags within a role invocation actually apply the tags to every task within the role).
@@ -12,7 +12,8 @@
   gather_facts: no
   tags: ['always']
   tasks:
-  - ec2_remote_facts:
+  - name: Get coordinator group
+    ec2_remote_facts:
       region: "{{ REGION }}"
       profile: "{{ PROFILE|default(omit) }}"
       filters:
@@ -20,8 +21,8 @@
         vpc-id: "{{ VPC_ID|default('*') }}"
         "tag:cluster-role": "coordinator"
     register: coordinator_facts
-  - debug: var=coordinator_facts
-  - ec2_remote_facts:
+  - name: Get worker group
+    ec2_remote_facts:
       region: "{{ REGION }}"
       profile: "{{ PROFILE|default(omit) }}"
       filters:
@@ -29,16 +30,14 @@
         vpc-id: "{{ VPC_ID|default('*') }}"
         "tag:cluster-role": "worker"
     register: worker_facts
-  - debug: var=worker_facts
-  - ec2_remote_facts:
+  - name: Get inventory group
+    ec2_remote_facts:
       region: "{{ REGION }}"
       profile: "{{ PROFILE|default(omit) }}"
       filters:
         instance.group-name: "{{ CLUSTER_NAME }}"
         vpc-id: "{{ VPC_ID|default('*') }}"
-        ip-address: "{{ LIMIT_HOSTS|default('*') }}"
     register: cluster_facts
-  - debug: var=cluster_facts
   - add_host:
       name: "{{ item.public_ip_address }}"
       ansible_ssh_host: "{{ item.public_ip_address }}"
@@ -60,7 +59,8 @@
       tags: "{{ item.tags }}"
       groups: workers
     changed_when: false
-    with_items: "{{ worker_facts.instances }}"
+    # we need to sort workers by stable order to rewrite Myria configuration file when workers are added
+    with_items: "{{ worker_facts.instances | sort(attribute='tags.node-id') }}"
   - add_host:
       name: "{{ item.public_ip_address }}"
       ansible_ssh_host: "{{ item.public_ip_address }}"
@@ -71,13 +71,52 @@
       tags: "{{ item.tags }}"
       groups: cluster
     changed_when: false
+    # we need to sort workers by stable order to rewrite Myria configuration file when workers are added
+    with_items: "{{ cluster_facts.instances | sort(attribute='tags.node-id') }}"
+
+  # Add separate groups for hosts explicitly or implicitly specified for current run
+  - add_host:
+      name: "{{ item.public_ip_address }}"
+      ansible_ssh_host: "{{ item.public_ip_address }}"
+      private_ip_address: "{{ item.private_ip_address }}"
+      public_ip_address: "{{ item.public_ip_address }}"
+      private_dns_name: "{{ item.private_dns_name }}"
+      public_dns_name: "{{ item.public_dns_name }}"
+      tags: "{{ item.tags }}"
+      groups: coordinator_in_scope
+    changed_when: false
+    when: "(LIMIT_HOSTS is not defined) or ('{{item.public_ip_address}}' in LIMIT_HOSTS)"
+    with_items: "{{ coordinator_facts.instances }}"
+  - add_host:
+      name: "{{ item.public_ip_address }}"
+      ansible_ssh_host: "{{ item.public_ip_address }}"
+      private_ip_address: "{{ item.private_ip_address }}"
+      public_ip_address: "{{ item.public_ip_address }}"
+      private_dns_name: "{{ item.private_dns_name }}"
+      public_dns_name: "{{ item.public_dns_name }}"
+      tags: "{{ item.tags }}"
+      groups: workers_in_scope
+    changed_when: false
+    when: "(LIMIT_HOSTS is not defined) or ('{{item.public_ip_address}}' in LIMIT_HOSTS)"
+    with_items: "{{ worker_facts.instances }}"
+  - add_host:
+      name: "{{ item.public_ip_address }}"
+      ansible_ssh_host: "{{ item.public_ip_address }}"
+      private_ip_address: "{{ item.private_ip_address }}"
+      public_ip_address: "{{ item.public_ip_address }}"
+      private_dns_name: "{{ item.private_dns_name }}"
+      public_dns_name: "{{ item.public_dns_name }}"
+      tags: "{{ item.tags }}"
+      groups: cluster_in_scope
+    changed_when: false
+    when: "(LIMIT_HOSTS is not defined) or ('{{item.public_ip_address}}' in LIMIT_HOSTS)"
     with_items: "{{ cluster_facts.instances }}"
 
 - name: Configure common functionality on all nodes
-  hosts: cluster
+  hosts: cluster_in_scope
   remote_user: ubuntu
   become: yes
-  gather_facts: yes
+  gather_facts: no
   roles:
     - basenode
     - yarn-common
@@ -85,7 +124,7 @@
     - ganglia-monitor
 
 - name: Configure YARN RM
-  hosts: coordinator
+  hosts: coordinator_in_scope
   remote_user: ubuntu
   become: yes
   gather_facts: no
@@ -93,7 +132,7 @@
     - yarn-master
 
 - name: Configure YARN NM
-  hosts: cluster
+  hosts: cluster_in_scope
   remote_user: ubuntu
   become: yes
   gather_facts: no
@@ -101,7 +140,7 @@
     - yarn-slave
 
 - name: Configure Ganglia UI on coordinator
-  hosts: coordinator
+  hosts: coordinator_in_scope
   remote_user: ubuntu
   become: yes
   gather_facts: no
@@ -110,7 +149,7 @@
     - ganglia-web
 
 - name: Configure and launch MyriaX on coordinator
-  hosts: coordinator
+  hosts: coordinator_in_scope
   remote_user: ubuntu
   become: yes
   gather_facts: no
@@ -119,7 +158,7 @@
     - myria
 
 - name: Install and launch myria-web on coordinator
-  hosts: coordinator
+  hosts: coordinator_in_scope
   remote_user: ubuntu
   become: yes
   gather_facts: no
@@ -128,7 +167,7 @@
     - myria-web
 
 - name: Install and launch jupyter-notebook on coordinator
-  hosts: coordinator
+  hosts: coordinator_in_scope
   remote_user: ubuntu
   become: yes
   gather_facts: no
