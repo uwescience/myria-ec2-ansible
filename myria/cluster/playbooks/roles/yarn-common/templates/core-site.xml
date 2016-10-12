@@ -5,12 +5,12 @@
   </property> -->
   <property>
     <name>fs.defaultFS</name>
-    <value>hdfs://__MASTER_IP__:8020</value>
+    <value>hdfs://{{ master_ip }}:8020</value>
   </property>
 
   <property>
     <name>hadoop.tmp.dir</name>
-    <value>__HADOOP_HOME__/tmp</value>
+    <value>{{ hadoop_home }}/tmp</value>
   </property>
 
   <property>

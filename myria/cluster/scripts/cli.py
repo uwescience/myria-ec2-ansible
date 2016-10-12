@@ -8,10 +8,12 @@ import signal
 import traceback
 import subprocess
 from time import sleep
-from tempfile import mkdtemp, NamedTemporaryFile
+from tempfile import mkdtemp
 from collections import namedtuple
+from copy import deepcopy
 from string import ascii_lowercase
 from operator import itemgetter
+from operator import attrgetter
 import click
 import yaml
 import json
@@ -303,6 +305,44 @@ SECURITY_GROUP_RULES = [
     SecurityGroupRule("tcp", nodemanager_web_port, nodemanager_web_port, "0.0.0.0/0", None),
 ]
 
+CLUSTER_METADATA_KEYS = dict(
+    instance_type=str,
+    cluster_size=int,
+    ami_id=str,
+    zone=str,
+    subnet_id=str,
+    role=str,
+    spot_price=str,
+    storage_type=str,
+    data_volume_size_gb=int,
+    data_volume_type=str,
+    data_volume_iops=int,
+    data_volume_count=int,
+    node_mem_gb=float,
+    driver_mem_gb=float,
+    coordinator_mem_gb=float,
+    worker_mem_gb=float,
+    heap_mem_fraction=float,
+    node_vcores=int,
+    coordinator_vcores=int,
+    worker_vcores=int,
+    workers_per_node=int,
+    cluster_log_level=str,
+)
+
+
+def get_cluster_metadata_tags_from_dict(d):
+    return [(k.replace('_', '-'), str(d[k])) for k in CLUSTER_METADATA_KEYS if d.get(k) is not None]
+
+
+def get_dict_from_cluster_metadata(group):
+    d = {}
+    for key, cons in CLUSTER_METADATA_KEYS.iteritems():
+        val = group.tags.get(key.replace('_', '-'))
+        d[key] = cons(val) if val is not None else None
+    return d
+
+
 DEFAULTS = dict(
     key_pair="%s-myria" % USER,
     region='us-west-2',
@@ -371,31 +411,22 @@ def write_secure_file(path, content):
 
 
 def launch_cluster(cluster_name, app_name="myria", verbosity=0, **kwargs):
-    # Create EC2 key pair if absent
-    create_key_pair_and_private_key_file(kwargs['key_pair'], kwargs['private_key_file'], kwargs['region'],
-            profile=kwargs['profile'], verbosity=verbosity)
-    # Create security group for this cluster
-    group = create_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'],
-            vpc_id=kwargs['vpc_id'], verbosity=verbosity)
-    # Tag security group to designate as Myria cluster
-    group_tags = {'app': app_name}
-    if kwargs.get('storage_type'):
-        group_tags.update({'storage-type': kwargs['storage_type']})
-    if kwargs.get('iam_user'):
-        group_tags.update({'user:Name': kwargs['iam_user']})
-    if kwargs.get('spot_price'):
-        group_tags.update({'spot-price': kwargs['spot_price']})
-    group.add_tags(group_tags)
-    # Allow this group complete access to itself
-    self_rules = [SecurityGroupRule(proto, 0, 65535, "0.0.0.0/0", group) for proto in ['tcp', 'udp']]
-    rules = self_rules + SECURITY_GROUP_RULES
-    # Add security group rules
-    for rule in rules:
-        group.authorize(ip_protocol=rule.ip_protocol,
-                        from_port=rule.from_port,
-                        to_port=rule.to_port,
-                        cidr_ip=rule.cidr_ip,
-                        src_group=rule.src_group)
+    group = get_security_group_for_cluster(cluster_name, region=kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+    target_cluster_size = kwargs['cluster_size']
+    actual_cluster_size = len(group.instances())
+    launch_count = 0
+    state = group.tags['state']
+    if state == "initializing":
+        assert actual_cluster_size == 0
+        current_cluster_size = 0
+    elif state == "resizing":
+        current_cluster_size = int(group.tags['cluster-size'])
+    else:
+        click.secho("Attempted to launch instances in cluster '%s' in unexpected state '%s', exiting..." % (cluster_name, state), fg='red')
+        sys.exit(1)
+    assert current_cluster_size == actual_cluster_size, "Expected %d instances to be running, but found %d running instances!" % (current_cluster_size, actual_cluster_size)
+    launch_count = target_cluster_size - current_cluster_size
+    assert launch_count > 0
     # Launch instances
     if verbosity > 0:
         click.echo("Launching instances...")
@@ -418,41 +449,50 @@ def launch_cluster(cluster_name, app_name="myria", verbosity=0, **kwargs):
     if kwargs.get('spot_price'):
         launched_instance_ids = []
         launch_args.update(price=kwargs['spot_price'],
-                           count=kwargs['cluster_size'],
+                           count=launch_count,
                            launch_group="launch-group-%s" % cluster_name, # fate-sharing across instances
                            availability_zone_group="az-launch-group-%s" % cluster_name) # launch all instances in same AZ
         spot_requests = ec2.request_spot_instances(**launch_args)
         spot_request_ids = [req.id for req in spot_requests]
         while True:
             # Spot request objects won't auto-update, so we need to fetch them again on each iteration.
-            for req in ec2.get_all_spot_instance_requests(request_ids=spot_request_ids):
-                if req.state != "active":
-                    break
+            try:
+                reqs = ec2.get_all_spot_instance_requests(request_ids=spot_request_ids)
+            except ec2.ResponseError as e:
+                # Occasionally EC2 will not recognize a spot request ID it has just returned.
+                if e.code == 'InvalidSpotInstanceRequestID.NotFound':
+                    pass
                 else:
-                    launched_instance_ids.append(req.instance_id)
-            else: # all requests fulfilled, so break out of while loop
-                break
+                    raise
+            else:
+                for req in reqs:
+                    if req.state != "active":
+                        break
+                    else:
+                        launched_instance_ids.append(req.instance_id)
+                else: # all requests fulfilled, so break out of while loop
+                    break
             if verbosity > 0:
                 click.secho("Not all spot requests fulfilled, waiting 60 seconds...", fg='yellow')
             sleep(60)
 
-        reservations = ec2.get_all_instances(launched_instance_ids)
-        launched_instances = [instance for res in reservations for instance in res.instances]
+        launched_instances = ec2.get_only_instances(launched_instance_ids)
     else:
-        launch_args.update(min_count=kwargs['cluster_size'], max_count=kwargs['cluster_size'])
+        launch_args.update(min_count=launch_count, max_count=launch_count)
         reservation = ec2.run_instances(**launch_args)
         launched_instances = reservation.instances
     # Tag instances
     if verbosity > 0:
         click.echo("Tagging instances...")
-    instances = sorted((instance for instance in launched_instances), key=lambda i: i.private_dns_name)
+    # We need to sort instances in a stable order that increases with time,
+    # so worker IDs are stable and increase when new instances are launched.
+    instances = sorted(launched_instances, key=attrgetter('ami_launch_index'))
     for idx, instance in enumerate(instances):
         instance_tags = {'app': app_name, 'cluster-name': cluster_name}
         if kwargs.get('iam_user'):
             instance_tags.update({'user:Name': kwargs['iam_user']})
         if kwargs.get('spot_price'):
             instance_tags.update({'spot-price': kwargs['spot_price']})
-        instance.add_tags(instance_tags)
         # Tag volumes
         volumes = ec2.get_all_volumes(filters={'attachment.instance-id': instance.id})
         for volume in volumes:
@@ -460,14 +500,36 @@ def launch_cluster(cluster_name, app_name="myria", verbosity=0, **kwargs):
             if kwargs.get('iam_user'):
                 volume_tags.update({'user:Name': kwargs['iam_user']})
             volume.add_tags(volume_tags)
+        cluster_idx = current_cluster_size + idx
+        # HACK: we zero-pad the `node-id` tag so we can alphabetically sort on it in Ansible (numeric sort is too difficult).
+        instance_tags.update({'node-id': "%03d" % cluster_idx})
         if idx == 0:
             # Tag coordinator
-            instance.add_tags({'Name': "%s-coordinator" % cluster_name, 'cluster-role': "coordinator", 'worker-id': "0"})
+            instance_tags.update({'Name': "%s-coordinator" % cluster_name, 'cluster-role': "coordinator", 'worker-id': "0"})
         else:
             # Tag workers
-            instance_name_tag = "%s-worker-%d-%d" % (cluster_name, ((idx - 1) * kwargs['workers_per_node']) + 1, idx * kwargs['workers_per_node'])
-            worker_id_tag = ','.join(map(str, range(((idx - 1) * kwargs['workers_per_node']) + 1, (idx  * kwargs['workers_per_node']) + 1)))
-            instance.add_tags({'Name': instance_name_tag, 'cluster-role': "worker", 'worker-id': worker_id_tag})
+            instance_name_tag = "%s-worker-%d-%d" % (cluster_name, ((cluster_idx - 1) * kwargs['workers_per_node']) + 1, cluster_idx * kwargs['workers_per_node'])
+            worker_id_tag = ','.join(map(str, range(((cluster_idx - 1) * kwargs['workers_per_node']) + 1, (cluster_idx  * kwargs['workers_per_node']) + 1)))
+            instance_tags.update({'Name': instance_name_tag, 'cluster-role': "worker", 'worker-id': worker_id_tag})
+        instance.add_tags(instance_tags)
+        # poll instances for status until all are reachable
+    if verbosity > 0:
+        click.secho("Waiting for all instances to become reachable...", fg='yellow')
+    if not wait_for_all_instances_reachable(cluster_name, kwargs['region'], profile=kwargs['profile'],
+            vpc_id=kwargs['vpc_id'], verbosity=verbosity):
+        # If this is a new cluster, destroy it, otherwise just terminate the newly launched instances.
+        if state == "initializing":
+            click.secho("Unexpected error, destroying cluster...", fg='red')
+            terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+        else:
+            instance_ids = [i.id for i in instances]
+            click.secho("Unexpected error, terminating new instances...", fg='red')
+            if verbosity > 1:
+                click.echo("Terminating instances %s" % ', '.join(instance_ids))
+            ec2.terminate_instances(instance_ids=instance_ids)
+        sys.exit(1)
+    # NB: callers that launch new instances in existing clusters are responsible for updating cluster size metadata!
+    return instances
 
 
 def get_security_group_for_cluster(cluster_name, region, profile=None, vpc_id=None):
@@ -492,11 +554,11 @@ def get_security_group_for_cluster(cluster_name, region, profile=None, vpc_id=No
         return groups[0]
 
 
-def create_security_group_for_cluster(cluster_name, region, profile=None, vpc_id=None, verbosity=0):
+def create_security_group_for_cluster(cluster_name, app_name="myria", verbosity=0, **kwargs):
     if verbosity > 0:
-        click.echo("Creating security group '%s' in region '%s'..." % (cluster_name, region))
-    ec2 = boto.ec2.connect_to_region(region, profile_name=profile)
-    group = ec2.create_security_group(cluster_name, "Myria security group", vpc_id=vpc_id)
+        click.echo("Creating security group '%s' in region '%s'..." % (cluster_name, kwargs['region']))
+    ec2 = boto.ec2.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
+    group = ec2.create_security_group(cluster_name, "Myria security group", vpc_id=kwargs['vpc_id'])
     # We need to poll for availability after creation since as usual AWS is eventually consistent
     while True:
         try:
@@ -504,12 +566,30 @@ def create_security_group_for_cluster(cluster_name, region, profile=None, vpc_id
         except ec2.ResponseError as e:
             if e.code == 'InvalidGroup.NotFound':
                 if verbosity > 0:
-                    click.secho("Waiting for security group '%s' in region '%s' to become available..." % (cluster_name, region), fg='yellow')
+                    click.secho("Waiting for security group '%s' in region '%s' to become available..." % (cluster_name, kwargs['region']), fg='yellow')
                 sleep(5)
             else:
                 raise
         else:
             break
+    # Tag security group to designate as Myria cluster
+    group_tags = {'app': app_name, 'state': "initializing"}
+    if kwargs['iam_user']:
+        group_tags.update({'user:Name': kwargs['iam_user']})
+    # Tag security group with all command-line arguments so we can provision future instances identically
+    arg_tags = get_cluster_metadata_tags_from_dict(kwargs)
+    group_tags.update(arg_tags)
+    group.add_tags(group_tags)
+    # Allow this group complete access to itself
+    self_rules = [SecurityGroupRule(proto, 0, 65535, "0.0.0.0/0", group) for proto in ['tcp', 'udp']]
+    rules = self_rules + SECURITY_GROUP_RULES
+    # Add security group rules
+    for rule in rules:
+        group.authorize(ip_protocol=rule.ip_protocol,
+                        from_port=rule.from_port,
+                        to_port=rule.to_port,
+                        cidr_ip=rule.cidr_ip,
+                        src_group=rule.src_group)
     return group
 
 
@@ -910,6 +990,7 @@ def get_block_device_mapping(**kwargs):
 
 
 def run_playbook(playbook, private_key_file, extra_vars={}, tags=[], limit_hosts=[], max_retries=MAX_RETRIES_DEFAULT, verbosity=0):
+    extra_vars = deepcopy(extra_vars) # don't mutate the caller's copy
     # this should be done in an env var but Ansible maintainers are too stupid to support it
     extra_vars.update(ansible_python_interpreter='/usr/bin/env python')
     cluster_name = extra_vars['CLUSTER_NAME']
@@ -930,7 +1011,7 @@ def run_playbook(playbook, private_key_file, extra_vars={}, tags=[], limit_hosts
             limit_hosts = failed_hosts
         if limit_hosts:
             extra_vars['LIMIT_HOSTS'] = limit_hosts
-        # --module-path is for 2.2 version of ec2_remote_facts.py, remove (along with myria/cluster/playbooks/ec2_remote_facts.py) when Ansible 2.2 is released
+        # TODO: --module-path is for 2.2 version of ec2_remote_facts.py, remove (along with myria/cluster/playbooks/ec2_remote_facts.py) when Ansible 2.2 is released
         ansible_args = [ANSIBLE_EXECUTABLE_PATH, playbook_path, "--inventory", inventory, "--extra-vars", json.dumps(extra_vars), "--private-key", private_key_file, "--module-path", playbooks_dir]
         if tags:
             ansible_args.extend(["--tags", ','.join(tags)])
@@ -945,7 +1026,7 @@ def run_playbook(playbook, private_key_file, extra_vars={}, tags=[], limit_hosts
                     failed_hosts = []
                     with open(retry_filename,'r') as f:
                         failed_hosts = f.read().splitlines() 
-                    assert(failed_hosts) # should always have at least one failed host with these exit codes
+                    assert failed_hosts # should always have at least one failed host with these exit codes
                     click.secho("Playbook run failed on hosts %s, retrying (%d of %d)..." % (', '.join(failed_hosts), retries, max_retries), fg='yellow')
                     continue
                 else:
@@ -1031,17 +1112,19 @@ def create_cluster(cluster_name, **kwargs):
             sys.exit(1)
         # now revalidate with the VPC we just determined
         validate_aws_settings(kwargs['region'], kwargs['profile'], vpc_id, verbosity=verbosity)
+    kwargs['vpc_id'] = vpc_id
     iam_user = get_iam_user(kwargs['region'], profile=kwargs['profile'], verbosity=verbosity)
+    kwargs['iam_user'] = iam_user
 
     # for displaying example commands
     options_str = "--region %s" % kwargs['region']
     if kwargs['profile']:
         options_str += " --profile %s" % kwargs['profile']
-    if vpc_id:
+    if kwargs['vpc_id']:
         options_str += " --vpc-id %s" % vpc_id
 
     # abort if cluster already exists
-    if get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id):
+    if get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id']):
         click.secho("""
 Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to create a new cluster with the same name, first run
 
@@ -1056,6 +1139,10 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
     ephemeral_volumes = all_volumes if kwargs['storage_type'] == 'local' else all_volumes[0:-kwargs['data_volume_count']]
     ebs_volumes = [] if kwargs['storage_type'] == 'local' else all_volumes[-kwargs['data_volume_count']:]
 
+    # Create EC2 key pair if absent
+    create_key_pair_and_private_key_file(kwargs['key_pair'], kwargs['private_key_file'], kwargs['region'],
+        profile=kwargs['profile'], verbosity=verbosity)
+
     # install keyboard interrupt handler to destroy partially-deployed cluster
     # TODO: signal handlers are inherited by each child process spawned by Ansible,
     # so messages are (harmlessly) duplicated for each process.
@@ -1064,32 +1151,26 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         click.secho("User interrupted deployment, destroying cluster...", fg='red')
         try:
-            terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+            terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
         except:
             pass # best-effort
         sys.exit(1)
 
     signal.signal(signal.SIGINT, signal_handler)
     try:
+        # create security group and apply tags
+        group = create_security_group_for_cluster(cluster_name, verbosity=verbosity, **kwargs)
         # launch all instances in this cluster
-        launch_cluster(cluster_name, iam_user=iam_user, vpc_id=vpc_id, device_mapping=device_mapping, verbosity=verbosity, **kwargs)
+        launch_cluster(cluster_name, device_mapping=device_mapping, verbosity=verbosity, **kwargs)
     except Exception as e:
         if verbosity > 0:
             click.secho(str(e), fg='red')
         if verbosity > 1:
             click.secho(traceback.format_exc(), fg='red')
         click.secho("Unexpected error, destroying cluster...", fg='red')
-        terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+        terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
         sys.exit(1)
 
-    # poll instances for status until all are reachable
-    if verbosity > 0:
-        click.secho("Waiting for all instances to become reachable...", fg='yellow')
-    if not wait_for_all_instances_reachable(cluster_name, kwargs['region'], profile=kwargs['profile'],
-            vpc_id=vpc_id, verbosity=verbosity):
-        click.secho("Unexpected error, destroying cluster...", fg='red')
-        terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
-        sys.exit(1)
     # run remote playbook to provision EC2 instances
     extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None)
     extra_vars.update(CLUSTER_NAME=cluster_name)
@@ -1107,21 +1188,24 @@ Cluster '{cluster_name}' already exists in the '{region}' region. If you wish to
     tags = ['provision', 'configure'] if kwargs['unprovisioned'] else ['configure']
     if not run_playbook("remote.yml", kwargs['private_key_file'], extra_vars=extra_vars, tags=tags, verbosity=verbosity):
         click.secho("Failed to provision instances, destroying cluster...", fg='red')
-        terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+        terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
         sys.exit(1)
 
     # wait for all workers to become available
     if verbosity > 0:
         click.secho("Waiting for Myria service to become available...", fg='yellow')
     if not wait_for_all_workers_online(cluster_name, kwargs['region'], profile=kwargs['profile'],
-            vpc_id=vpc_id, verbosity=verbosity):
+            vpc_id=kwargs['vpc_id'], verbosity=verbosity):
         click.secho("""
 The Myria service on your cluster '{cluster_name}' in the '{region}' region returned an error.
 Please refer to the error message above for diagnosis. Exiting (not destroying cluster).
 """.format(cluster_name=cluster_name, region=kwargs['region']), fg='red')
         sys.exit(1)
 
-    coordinator_public_hostname = get_coordinator_public_hostname(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+    # mark cluster as running
+    group.add_tags({'state': "running"})
+
+    coordinator_public_hostname = get_coordinator_public_hostname(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
     if not coordinator_public_hostname:
         click.secho("Couldn't resolve coordinator public DNS, exiting (not destroying cluster)", fg='red')
         sys.exit(1)
@@ -1223,6 +1307,9 @@ def stop_cluster(cluster_name, **kwargs):
         else: # all instances were stopped, so break out of while loop
             break
 
+    # mark cluster as stopped
+    group.add_tags({'state': "stopped"})
+
     options_str = "--region %s" % kwargs['region']
     if kwargs['profile']:
         options_str += " --profile %s" % kwargs['profile']
@@ -1274,6 +1361,9 @@ Please refer to the error message above for diagnosis.
 """.format(cluster_name=cluster_name, region=kwargs['region']), fg='red')
         sys.exit(1)
 
+    # mark cluster as running
+    group.add_tags({'state': "running"})
+
     options_str = "--region %s" % kwargs['region']
     if kwargs['profile']:
         options_str += " --profile %s" % kwargs['profile']
@@ -1312,7 +1402,8 @@ def update_cluster(cluster_name, **kwargs):
     verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
 
     validate_aws_settings(kwargs['region'], kwargs['profile'], kwargs['vpc_id'], verbosity=verbosity)
-    if not get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id']):
+    group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+    if not group:
         click.secho("No cluster with name '%s' exists in region '%s'." % (cluster_name, kwargs['region']), fg='red')
         sys.exit(1)
 
@@ -1322,6 +1413,9 @@ def update_cluster(cluster_name, **kwargs):
     if verbosity > 1:
         for k, v in extra_vars.iteritems():
             click.echo("%s: %s" % (k, v))
+
+    # mark cluster as updating
+    group.add_tags({'state': "updating"})
 
     # run remote playbook to update software on EC2 instances
     click.echo("Updating Myria software on cluster...")
@@ -1336,6 +1430,9 @@ There was a problem updating Myria software.
 """ + ("See previous error messages for details." if kwargs['verbose'] else "Rerun with the --verbose option for details."),
                     fg='red')
         sys.exit(1)
+
+    # mark cluster as running
+    group.add_tags({'state': "running"})
 
 
 def validate_list_options(ctx, param, value):
@@ -1373,12 +1470,12 @@ def list_cluster(cluster_name, **kwargs):
             if not group:
                 click.secho("No cluster with name '%s' exists in region '%s'." % (cluster_name, kwargs['region']), fg='red')
                 sys.exit(1)
-            format_str = "{: <10} {: <50}"
-            print(format_str.format('WORKER_IDS', 'HOST'))
-            print(format_str.format('----------', '----'))
-            instances = sorted(group.instances(), key=lambda i: int(i.tags.get('worker-id').split(',')[0]))
+            format_str = "{: <7} {: <10} {: <50}"
+            print(format_str.format('NODE_ID', 'WORKER_IDS', 'HOST'))
+            print(format_str.format('-------', '----------', '----'))
+            instances = sorted(group.instances(), key=lambda i: int(i.tags.get('node-id')))
             for instance in instances:
-                print(format_str.format(instance.tags.get('worker-id'), instance.public_dns_name))
+                print(format_str.format(int(instance.tags.get('node-id')), instance.tags.get('worker-id'), instance.public_dns_name))
     else:
         ec2 = boto.ec2.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
         myria_groups = ec2.get_all_security_groups(filters={'tag:app': "myria"})
@@ -1389,13 +1486,129 @@ def list_cluster(cluster_name, **kwargs):
             # In the EC2 API, filters can only express OR,
             # so we have to implement AND by intersecting results for each filter.
             groups = [g for g in myria_groups if g.id in groups_in_vpc_ids]
-        format_str = "{: <20} {: <5} {: <50}"
-        print(format_str.format('CLUSTER', 'NODES', 'COORDINATOR'))
-        print(format_str.format('-------', '-----', '-----------'))
+        format_str = "{: <20} {: <5} {: <50} {: <10}"
+        print(format_str.format('CLUSTER', 'NODES', 'COORDINATOR', 'STATE'))
+        print(format_str.format('-------', '-----', '-----------', '-----'))
         for group in groups:
             coordinator = get_coordinator_public_hostname(
                 group.name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
-            print(format_str.format(group.name, len(group.instances()), coordinator))
+            print(format_str.format(group.name, len(group.instances()), coordinator, group.tags.get('state')))
+
+
+@run.command('expand')
+@click.argument('cluster_name')
+@click.option('--silent', is_flag=True)
+@click.option('--verbose', is_flag=True)
+@click.option('--profile', default=None,
+    help="Boto profile used to launch your cluster")
+@click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
+    help="AWS region your cluster was launched in")
+@click.option('--vpc-id', default=None,
+    help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
+@click.option('--key-pair', show_default=True, default=DEFAULTS['key_pair'],
+    help="EC2 key pair used to launch AMI builder instance")
+@click.option('--private-key-file', callback=default_key_file_from_key_pair,
+    help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
+@click.option('--count', type=int, show_default=True, default=1,
+    help="Number of nodes to add to this cluster")
+def expand_cluster(cluster_name, **kwargs):
+    verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
+
+    validate_aws_settings(kwargs['region'], kwargs['profile'], kwargs['vpc_id'], verbosity=verbosity)
+    group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+    if not group:
+        click.secho("No cluster with name '%s' exists in region '%s'." % (cluster_name, kwargs['region']), fg='red')
+        sys.exit(1)
+    # mark cluster as resizing
+    group.add_tags({'state': "resizing"})
+    iam_user = get_iam_user(kwargs['region'], profile=kwargs['profile'], verbosity=verbosity)
+    kwargs['iam_user'] = iam_user
+
+    md = get_dict_from_cluster_metadata(group)
+    kwargs.update(md)
+    # Update cluster size to include new nodes
+    kwargs['cluster_size'] += kwargs['count']
+
+    device_mapping = get_block_device_mapping(**kwargs)
+    # We need to massage opaque BlockDeviceType objects into dicts we can pass to Ansible
+    all_volumes = [dict(v.__dict__.iteritems(), device_name=k) for k, v in sorted(device_mapping.iteritems(), key=itemgetter(0))]
+    # we need to special-case local-only because of list slicing behavior with index "-0"
+    ephemeral_volumes = all_volumes if kwargs['storage_type'] == 'local' else all_volumes[0:-kwargs['data_volume_count']]
+    ebs_volumes = [] if kwargs['storage_type'] == 'local' else all_volumes[-kwargs['data_volume_count']:]
+
+    instances = None
+    try:
+        # launch the new instance
+        instances = launch_cluster(cluster_name, device_mapping=device_mapping, verbosity=verbosity, **kwargs)
+    except Exception as e:
+        if verbosity > 0:
+            click.secho(str(e), fg='red')
+        if verbosity > 1:
+            click.secho(traceback.format_exc(), fg='red')
+        click.secho("Unexpected error, exiting...", fg='red')
+        sys.exit(1)
+
+    instance_ids = [i.id for i in instances]
+    ec2 = boto.ec2.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
+    # install keyboard interrupt handler to destroy partially-deployed cluster
+    # TODO: signal handlers are inherited by each child process spawned by Ansible,
+    # so messages are (harmlessly) duplicated for each process.
+    def signal_handler(sig, frame):
+        # ignore future interrupts
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        click.secho("Unexpected error, terminating new instances...", fg='red')
+        if verbosity > 1:
+            click.echo("Terminating instances %s" % ', '.join(instance_ids))
+        ec2.terminate_instances(instance_ids=instance_ids)
+        # Reset cluster size metadata on security group
+        group.add_tags({'cluster-size': kwargs['cluster_size']})
+        sys.exit(1)
+
+    signal.signal(signal.SIGINT, signal_handler)
+
+    # run remote playbook to provision EC2 instances
+    extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None)
+    extra_vars.update(CLUSTER_NAME=cluster_name)
+    extra_vars.update(ALL_VOLUMES=all_volumes)
+    extra_vars.update(EBS_VOLUMES=ebs_volumes)
+    extra_vars.update(EPHEMERAL_VOLUMES=ephemeral_volumes)
+
+    if verbosity > 2:
+        click.echo(json.dumps(extra_vars))
+
+    # provision new instance
+    all_provisioned_ami_ids = DEFAULT_PROVISIONED_HVM_AMI_IDS.values() + DEFAULT_PROVISIONED_PV_AMI_IDS.values()
+    tags = ['configure'] if kwargs['ami_id'] in all_provisioned_ami_ids else ['provision', 'configure']
+    if not run_playbook("remote.yml", kwargs['private_key_file'], extra_vars=extra_vars, tags=tags, limit_hosts=[i.ip_address for i in instances], verbosity=verbosity):
+        click.secho("Failed to provision new instances, terminating...", fg='red')
+        if verbosity > 1:
+            click.echo("Terminating instances %s" % ', '.join(instance_ids))
+        ec2.terminate_instances(instance_ids=instance_ids)
+        sys.exit(1)
+
+    # update configuration on coordinator
+    tags = ['update-workers']
+    if not run_playbook("remote.yml", kwargs['private_key_file'], extra_vars=extra_vars, tags=tags, verbosity=verbosity):
+        click.secho("Failed to configure cluster for new instance, terminating new instances...", fg='red')
+        if verbosity > 1:
+            click.echo("Terminating instances %s" % ', '.join(instance_ids))
+        ec2.terminate_instances(instance_ids=instance_ids)
+        sys.exit(1)
+
+    # wait for all workers to become available
+    if verbosity > 0:
+        click.secho("Waiting for Myria service to become available...", fg='yellow')
+    if not wait_for_all_workers_online(cluster_name, kwargs['region'], profile=kwargs['profile'],
+            vpc_id=kwargs['vpc_id'], verbosity=verbosity):
+        click.secho("""
+The Myria service on your cluster '{cluster_name}' in the '{region}' region returned an error.
+Please refer to the error message above for diagnosis. Exiting (not destroying new instances).
+""".format(cluster_name=cluster_name, region=kwargs['region']), fg='red')
+        sys.exit(1)
+
+    # Update cluster metadata and state
+    group.add_tags({'cluster-size': kwargs['cluster_size'], 'state': "running"})
+    click.secho("%d new nodes successfully added to cluster '%s'." % (kwargs['count'], cluster_name), fg='green')
 
 
 def default_base_ami_id_from_region(ctx, param, value):
@@ -1536,8 +1749,6 @@ instance_str + """delete security group '{ami_name}' (ID: {group_id}) from the A
             sys.exit(1)
 
     extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None)
-    extra_vars.update(AMI_NAME=ami_name)
-    extra_vars.update(CLUSTER_NAME=ami_name)
     extra_vars.update(CLUSTER_NAME=ami_name)
     if vpc_id:
         extra_vars.update(VPC_ID=vpc_id)
@@ -1563,6 +1774,9 @@ instance_str + """delete security group '{ami_name}' (ID: {group_id}) from the A
 
     signal.signal(signal.SIGINT, signal_handler)
     try:
+        # create security group for AMI builder instance
+        create_security_group_for_cluster(ami_name, app_name="myria-ami-builder",
+            iam_user=iam_user, vpc_id=vpc_id, verbosity=verbosity, **kwargs)
         # launch AMI builder instance
         launch_cluster(ami_name, app_name="myria-ami-builder", iam_user=iam_user, vpc_id=vpc_id,
             ami_id=kwargs['base_ami_id'], cluster_size=1, verbosity=verbosity, **kwargs)

@@ -1,5 +1,5 @@
 ---
-# ansible-playbook "$MYRIA_ANSIBLE_DIR/site.yml" --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE"
+# ansible-playbook "$MYRIA_ANSIBLE_DIR/remote.yml" --extra-vars "$ANSIBLE_VARS" --private-key "$PRIVATE_KEY_FILE"
 # NB: this playbook is expected to be called with either `--tags=provision`, `--tags=configure` or `--tags=update`!
 # By (mis)design, it is impossible to filter by tags within a playbook itself
 # (tags within a role invocation actually apply the tags to every task within the role).
@@ -12,7 +12,8 @@
   gather_facts: no
   tags: ['always']
   tasks:
-  - ec2_remote_facts:
+  - name: Get coordinator group
+    ec2_remote_facts:
       region: "{{ REGION }}"
       profile: "{{ PROFILE|default(omit) }}"
       filters:
@@ -20,8 +21,8 @@
         vpc-id: "{{ VPC_ID|default('*') }}"
         "tag:cluster-role": "coordinator"
     register: coordinator_facts
-  - debug: var=coordinator_facts
-  - ec2_remote_facts:
+  - name: Get worker group
+    ec2_remote_facts:
       region: "{{ REGION }}"
       profile: "{{ PROFILE|default(omit) }}"
       filters:
@@ -29,8 +30,8 @@
         vpc-id: "{{ VPC_ID|default('*') }}"
         "tag:cluster-role": "worker"
     register: worker_facts
-  - debug: var=worker_facts
-  - ec2_remote_facts:
+  - name: Get inventory group
+    ec2_remote_facts:
       region: "{{ REGION }}"
       profile: "{{ PROFILE|default(omit) }}"
       filters:
@@ -38,7 +39,6 @@
         vpc-id: "{{ VPC_ID|default('*') }}"
         ip-address: "{{ LIMIT_HOSTS|default('*') }}"
     register: cluster_facts
-  - debug: var=cluster_facts
   - add_host:
       name: "{{ item.public_ip_address }}"
       ansible_ssh_host: "{{ item.public_ip_address }}"
@@ -60,7 +60,8 @@
       tags: "{{ item.tags }}"
       groups: workers
     changed_when: false
-    with_items: "{{ worker_facts.instances }}"
+    # we need to sort workers by stable order to rewrite Myria configuration file when workers are added
+    with_items: "{{ worker_facts.instances | sort(attribute='tags.node-id') }}"
   - add_host:
       name: "{{ item.public_ip_address }}"
       ansible_ssh_host: "{{ item.public_ip_address }}"
@@ -71,7 +72,8 @@
       tags: "{{ item.tags }}"
       groups: cluster
     changed_when: false
-    with_items: "{{ cluster_facts.instances }}"
+    # we need to sort workers by stable order to rewrite Myria configuration file when workers are added
+    with_items: "{{ cluster_facts.instances | sort(attribute='tags.node-id') }}"
 
 - name: Configure common functionality on all nodes
   hosts: cluster
