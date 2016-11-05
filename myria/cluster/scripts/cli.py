@@ -381,7 +381,7 @@ def launch_cluster(cluster_name, verbosity=0, **kwargs):
                      placement=kwargs['zone'],
                      block_device_map=kwargs.get('device_mapping'),
                      instance_profile_name=kwargs['role'],
-                     ebs_optimized=(kwargs['storage_type'] == 'ebs'))
+                     ebs_optimized=False)
     if kwargs.get('subnet_id'):
         interface = NetworkInterfaceSpecification(subnet_id=kwargs['subnet_id'],
                                                   groups=[group.id],
@@ -962,7 +962,7 @@ def run():
     help="ID of the VPC subnet in which to launch your EC2 instances")
 @click.option('--role', help="Name of an IAM role used to launch your EC2 instances")
 @click.option('--spot-price', help="Price in dollars of the maximum bid for an EC2 spot instance request")
-@click.option('--storage-type', show_default=True, callback=validate_storage_type, is_eager=True,
+@click.option('--storage-type', show_default=True, callback=validate_storage_type,
     type=click.Choice(['ebs', 'local']), default=DEFAULTS['storage_type'],
     help="Type of the block device where Myria data is stored")
 @click.option('--data-volume-size-gb', type=int, callback=validate_data_volume_size,
