@@ -222,6 +222,7 @@ EBS_OPTIMIZED_INSTANCE_TYPES = [
     'r3.xlarge',
     'r3.2xlarge',
     'r3.4xlarge',
+    'x1.16xlarge',
     'x1.32xlarge',
 ]
 
@@ -275,6 +276,7 @@ INSTANCE_TYPE_CONFIGS = {
     'r3.4xlarge': InstanceTypeConfig(96.0, 95.4, 6.3, 16, 15, 1, 15),
     'r3.8xlarge': InstanceTypeConfig(192.0, 191.4, 6.1, 32, 31, 1, 31),
     'cr1.8xlarge': InstanceTypeConfig(192.0, 191.4, 6.1, 32, 31, 1, 31),
+    'x1.16xlarge': InstanceTypeConfig(800.0, 799.4, 12.6, 64, 63, 1, 63),
     'x1.32xlarge': InstanceTypeConfig(1600.0, 1599.4, 12.5, 128, 127, 1, 127),
     'd2.xlarge': InstanceTypeConfig(24.0, 23.4, 7.8, 4, 3, 1, 3),
     'd2.2xlarge': InstanceTypeConfig(48.0, 47.4, 6.7, 8, 7, 1, 7),
@@ -328,6 +330,7 @@ CLUSTER_METADATA_KEYS = dict(
     worker_vcores=int,
     workers_per_node=int,
     cluster_log_level=str,
+    state=str,
 )
 
 
@@ -503,7 +506,7 @@ def launch_cluster(cluster_name, app_name="myria", verbosity=0, **kwargs):
         cluster_idx = current_cluster_size + idx
         # HACK: we zero-pad the `node-id` tag so we can alphabetically sort on it in Ansible (numeric sort is too difficult).
         instance_tags.update({'node-id': "%03d" % cluster_idx})
-        if idx == 0:
+        if idx == 0 and state == "initializing":
             # Tag coordinator
             instance_tags.update({'Name': "%s-coordinator" % cluster_name, 'cluster-role': "coordinator", 'worker-id': "0"})
         else:
@@ -528,6 +531,9 @@ def launch_cluster(cluster_name, app_name="myria", verbosity=0, **kwargs):
                 click.echo("Terminating instances %s" % ', '.join(instance_ids))
             ec2.terminate_instances(instance_ids=instance_ids)
         sys.exit(1)
+    # need to update instances to get public IP
+    for i in instances:
+        i.update()
     # NB: callers that launch new instances in existing clusters are responsible for updating cluster size metadata!
     return instances
 
@@ -828,8 +834,15 @@ def validate_region(ctx, param, value):
     return value
 
 
+def validate_instance_type(ctx, param, value):
+    if value is not None and ctx.params.get('storage_type') == "local":
+        if value not in EPHEMERAL_VOLUMES_BY_INSTANCE_TYPE:
+            raise click.BadParameter("Instance type '%s' is incompatible with local storage" % value)
+    return value
+
+
 def validate_storage_type(ctx, param, value):
-    if value == "local":
+    if value == "local" and 'instance_type' in ctx.params:
         if ctx.params['instance_type'] not in EPHEMERAL_VOLUMES_BY_INSTANCE_TYPE:
             raise click.BadParameter("Instance type '%s' is incompatible with local storage" % ctx.params['instance_type'])
     return value
@@ -1059,7 +1072,7 @@ def run():
     help="EC2 key pair used to launch your cluster")
 @click.option('--private-key-file', callback=default_key_file_from_key_pair,
     help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
-@click.option('--instance-type', show_default=True, default=DEFAULTS['instance_type'], is_eager=True,
+@click.option('--instance-type', show_default=True, default=DEFAULTS['instance_type'], callback=validate_instance_type, is_eager=True,
     help="EC2 instance type for your cluster")
 @click.option('--cluster-size', show_default=True, default=DEFAULTS['cluster_size'],
     type=click.IntRange(3, None), help="Number of EC2 instances in your cluster")
@@ -1452,6 +1465,8 @@ def validate_list_options(ctx, param, value):
     help="AWS region to launch your cluster in")
 @click.option('--vpc-id', default=None,
     help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
+@click.option('--metadata', is_flag=True,
+    help="Output cluster configuration keys and values")
 @click.option('--coordinator', is_flag=True, callback=validate_list_options,
     help="Output public DNS name of coordinator node")
 @click.option('--workers', is_flag=True, callback=validate_list_options,
@@ -1459,7 +1474,11 @@ def validate_list_options(ctx, param, value):
 def list_cluster(cluster_name, **kwargs):
     validate_aws_settings(kwargs['region'], kwargs['profile'], kwargs['vpc_id'])
     if cluster_name is not None:
-        if kwargs['coordinator']:
+        if kwargs['metadata']:
+            group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+            md = get_dict_from_cluster_metadata(group)
+            print(json.dumps(md, sort_keys=True, indent=4, separators=(',', ': ')))
+        elif kwargs['coordinator']:
             print(get_coordinator_public_hostname(
                 cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id']))
         elif kwargs['workers']:
@@ -1492,10 +1511,17 @@ def list_cluster(cluster_name, **kwargs):
         for group in groups:
             coordinator = get_coordinator_public_hostname(
                 group.name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
-            print(format_str.format(group.name, len(group.instances()), coordinator, group.tags.get('state')))
+            print(format_str.format(group.name, len(group.instances()), coordinator, group.tags.get('state', "unknown")))
 
 
-@run.command('expand')
+def validate_resize_command(ctx, param, value):
+    if value is not None:
+        if ctx.params.get('cluster_size') or ctx.params.get('increment'):
+            raise click.BadParameter("Cannot specify both --cluster-size and --increment")
+    return value
+
+
+@run.command('resize')
 @click.argument('cluster_name')
 @click.option('--silent', is_flag=True)
 @click.option('--verbose', is_flag=True)
@@ -1509,9 +1535,11 @@ def list_cluster(cluster_name, **kwargs):
     help="EC2 key pair used to launch AMI builder instance")
 @click.option('--private-key-file', callback=default_key_file_from_key_pair,
     help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
-@click.option('--count', type=int, show_default=True, default=1,
+@click.option('--cluster-size', type=int, default=None, callback=validate_resize_command,
+    help="New number of nodes in this cluster")
+@click.option('--increment', type=click.IntRange(1, None), default=None, callback=validate_resize_command,
     help="Number of nodes to add to this cluster")
-def expand_cluster(cluster_name, **kwargs):
+def resize_cluster(cluster_name, **kwargs):
     verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
 
     validate_aws_settings(kwargs['region'], kwargs['profile'], kwargs['vpc_id'], verbosity=verbosity)
@@ -1525,9 +1553,12 @@ def expand_cluster(cluster_name, **kwargs):
     kwargs['iam_user'] = iam_user
 
     md = get_dict_from_cluster_metadata(group)
+    # save target cluster size before it's overwritten by cluster metadata
+    target_cluster_size = kwargs['cluster_size'] if kwargs.get('cluster_size') else md['cluster_size'] + kwargs['increment']
     kwargs.update(md)
-    # Update cluster size to include new nodes
-    kwargs['cluster_size'] += kwargs['count']
+    current_cluster_size = kwargs['cluster_size']
+    # overwrite parameter to launch_cluster() with desired cluster size
+    kwargs.update(cluster_size=target_cluster_size)
 
     device_mapping = get_block_device_mapping(**kwargs)
     # We need to massage opaque BlockDeviceType objects into dicts we can pass to Ansible
@@ -1560,8 +1591,6 @@ def expand_cluster(cluster_name, **kwargs):
         if verbosity > 1:
             click.echo("Terminating instances %s" % ', '.join(instance_ids))
         ec2.terminate_instances(instance_ids=instance_ids)
-        # Reset cluster size metadata on security group
-        group.add_tags({'cluster-size': kwargs['cluster_size']})
         sys.exit(1)
 
     signal.signal(signal.SIGINT, signal_handler)
@@ -1576,7 +1605,7 @@ def expand_cluster(cluster_name, **kwargs):
     if verbosity > 2:
         click.echo(json.dumps(extra_vars))
 
-    # provision new instance
+    # provision new instances
     all_provisioned_ami_ids = DEFAULT_PROVISIONED_HVM_AMI_IDS.values() + DEFAULT_PROVISIONED_PV_AMI_IDS.values()
     tags = ['configure'] if kwargs['ami_id'] in all_provisioned_ami_ids else ['provision', 'configure']
     if not run_playbook("remote.yml", kwargs['private_key_file'], extra_vars=extra_vars, tags=tags, limit_hosts=[i.ip_address for i in instances], verbosity=verbosity):
@@ -1606,9 +1635,9 @@ Please refer to the error message above for diagnosis. Exiting (not destroying n
 """.format(cluster_name=cluster_name, region=kwargs['region']), fg='red')
         sys.exit(1)
 
-    # Update cluster metadata and state
-    group.add_tags({'cluster-size': kwargs['cluster_size'], 'state': "running"})
-    click.secho("%d new nodes successfully added to cluster '%s'." % (kwargs['count'], cluster_name), fg='green')
+    # update cluster metadata and state
+    group.add_tags({'cluster-size': target_cluster_size, 'state': "running"})
+    click.secho("%d new nodes successfully added to cluster '%s'." % (target_cluster_size - current_cluster_size, cluster_name), fg='green')
 
 
 def default_base_ami_id_from_region(ctx, param, value):

@@ -34,7 +34,4 @@ setup(
             'myria-cluster=myria.cluster.scripts.cli:run',
         ]
     },
-    scripts=[
-        'myria/cluster/playbooks/ec2.py',
-    ],
 )

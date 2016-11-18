@@ -1,4 +1,9 @@
 ---
+- name: Gathering facts
+  setup:
+  tags:
+    - always
+
 - name: Unmount first data volume if it is pre-mounted (and remove fstab entries via state=absent rather than state=unmounted)
   mount: name="{{ legacy_mount_point }}" src="{{ ALL_VOLUMES[0].device_name }}" fstype={{ data_vol_fs_type }} state=absent
   tags:
