@@ -12,12 +12,11 @@ env SLEEP_TIME=30
 
 script
     . {{ soft_link_base_path }}/hadoop/env.sh
-    MYRIA_JAR={{myria_path}}/build/libs/myria-{{myria_version}}-all.jar
     # configure REEF debug logging
 {% if CLUSTER_LOG_LEVEL in ['DEBUG', 'TRACE', 'ALL'] %}
     export YARN_OPTS="$YARN_OPTS -Djava.util.logging.config.class=org.apache.reef.util.logging.Config"
 {% endif %}
-    {{ soft_link_base_path }}/hadoop/bin/yarn jar ${MYRIA_JAR} edu.washington.escience.myria.daemon.MyriaDriverLauncher -runtimeClass org.apache.reef.runtime.yarn.client.YarnClientConfiguration -configPath {{myria_path}}/myriadeploy -javaLibPath {{myria_path}}/build/libs -nativeLibPath {{myria_path}}/lib
+    {{ soft_link_base_path }}/hadoop/bin/yarn jar {{myria_jar}} edu.washington.escience.myria.daemon.MyriaDriverLauncher -runtimeClass org.apache.reef.runtime.yarn.client.YarnClientConfiguration -configPath {{myria_path}}/myriadeploy -javaLibPath {{myria_path}}/build/libs -nativeLibPath {{myria_path}}/lib
 end script
 
 post-stop script

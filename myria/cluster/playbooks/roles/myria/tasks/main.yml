@@ -25,28 +25,24 @@
 
 # TODO: remove this code and pass umask to git module when https://github.com/ansible/ansible/issues/10279 is resolved
 - name: Grant primary group write permissions
-  file: path={{myria_path}} mode="g+w" recurse=yes
+  file: path="{{myria_path}}" mode="g+w" recurse=yes
   tags:
     - provision
 
-- name: Clean Myria build
-  become: yes
-  become_user: "{{myria_user}}"
-  shell: "./gradlew clean"
-  args:
-    chdir: "{{myria_path}}"
-  when: git.changed
+- name: Check for Myria binaries
+  stat: path="{{myria_jar}}"
+  register: myria_jar_stat
   tags:
+    - provision
     - update
 
 - name: Compile Myria
   become: yes
   become_user: "{{myria_user}}"
-  shell: "./gradlew shadowJar"
+  shell: "./gradlew clean shadowJar"
   args:
     chdir: "{{myria_path}}"
-    creates: "{{myria_path}}/build/libs"
-  when: git.changed
+  when: git.changed or (not (myria_jar_stat.stat.exists))
   tags:
     - provision
     - update
