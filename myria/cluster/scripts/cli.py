@@ -1051,7 +1051,9 @@ def run_playbook(playbook, private_key_file, extra_vars={}, tags=[], limit_hosts
         status = subprocess.call(ansible_args, env=env)
         # handle failure
         if status != 0:
-            if status in [2, 3]: # failed tasks or unreachable hosts respectively
+            if verbosity > 0:
+                click.secho("Ansible exited with status code %d" % status, fg='red')
+            if status in [1, 2, 3]: # internal error, failed tasks, or unreachable hosts respectively
                 if retries < max_retries:
                     retries += 1
                     failed_hosts = []
@@ -1586,6 +1588,9 @@ def resize_cluster(cluster_name, **kwargs):
         target_cluster_size = kwargs['cluster_size'] if kwargs.get('cluster_size') else md['cluster_size'] + kwargs['increment']
         kwargs.update(md)
         current_cluster_size = kwargs['cluster_size']
+        if target_cluster_size <= current_cluster_size:
+            click.secho("You must specify a target cluster size greater than the current cluster size (%d)!" % current_cluster_size, fg='red')
+            sys.exit(1)
         # overwrite parameter to launch_cluster() with desired cluster size
         kwargs.update(cluster_size=target_cluster_size)
 
@@ -1817,24 +1822,15 @@ instance_str + """delete security group '{ami_name}' (ID: {group_id}) from the A
         # launch AMI builder instance
         launch_cluster(ami_name, app_name="myria-ami-builder", iam_user=iam_user, vpc_id=vpc_id,
             ami_id=kwargs['base_ami_id'], cluster_size=1, verbosity=verbosity, **kwargs)
-    except (KeyboardInterrupt, Exception) as e:
-        if verbosity > 0:
-            click.secho(str(e), fg='red')
-        if verbosity > 1:
-            click.secho(traceback.format_exc(), fg='red')
-        click.secho("Unexpected error launching AMI builder instance, destroying instance...", fg='red')
-        terminate_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
-        sys.exit(1)
 
-    # run remote playbook to provision EC2 instances
-    click.echo("Provisioning AMI builder instance...")
-    if not run_playbook("remote.yml", kwargs['private_key_file'], extra_vars=extra_vars, tags=['provision'], verbosity=verbosity):
-        click.secho("Unexpected error provisioning AMI builder instance, destroying instance...", fg='red')
-        terminate_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
-        sys.exit(1)
+        # run remote playbook to provision EC2 instances
+        click.echo("Provisioning AMI builder instance...")
+        if not run_playbook("remote.yml", kwargs['private_key_file'], extra_vars=extra_vars, tags=['provision'], verbosity=verbosity):
+            click.secho("Unexpected error provisioning AMI builder instance, destroying instance...", fg='red')
+            terminate_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
+            sys.exit(1)
 
-    click.echo("Bundling image...")
-    try:
+        click.echo("Bundling image...")
         image_ids_by_region = {}
         group = get_security_group_for_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
         instance_id = group.instances()[0].id
@@ -1868,7 +1864,7 @@ instance_str + """delete security group '{ami_name}' (ID: {group_id}) from the A
             click.secho(str(e), fg='red')
         if verbosity > 1:
             click.secho(traceback.format_exc(), fg='red')
-        click.secho("Unexpected error, destroying instance...", fg='red')
+        click.secho("Unexpected error, destroying AMI builder instance...", fg='red')
         terminate_cluster(ami_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
         sys.exit(1)
 
