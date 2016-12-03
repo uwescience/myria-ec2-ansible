@@ -517,7 +517,7 @@ def launch_cluster(cluster_name, app_name="myria", verbosity=0, **kwargs):
                 worker_id_tag = ','.join(map(str, range(((cluster_idx - 1) * kwargs['workers_per_node']) + 1, (cluster_idx  * kwargs['workers_per_node']) + 1)))
                 instance_tags.update({'Name': instance_name_tag, 'cluster-role': "worker", 'worker-id': worker_id_tag})
             instance.add_tags(instance_tags)
-            # poll instances for status until all are reachable
+        # poll instances for status until all are reachable
         if verbosity > 0:
             click.secho("Waiting for all instances to become reachable...", fg='yellow')
         wait_for_all_instances_reachable(cluster_name, kwargs['region'], profile=kwargs['profile'],
@@ -1237,6 +1237,9 @@ Your new Myria cluster '{cluster_name}' has been launched on Amazon EC2 in the '
 View the Myria worker IDs and public hostnames of all nodes in this cluster (the coordinator has worker ID 0):
 {script_name} list {cluster_name} {options}
 
+View cluster configuration options:
+{script_name} list {cluster_name} --metadata {options}
+
 """ + (
 """Stop this cluster:
 {script_name} stop {cluster_name} {options}
@@ -1245,6 +1248,14 @@ Start this cluster after stopping it:
 {script_name} start {cluster_name} {options}
 """ if not (kwargs.get('spot_price') or (kwargs['storage_type'] == "local")) else "") +
 """
+Resize this cluster (cluster size can only increase!):
+{script_name} resize {cluster_name} --increment 1 {options}
+or
+{script_name} resize {cluster_name} --cluster-size {new_cluster_size} {options}
+
+Update Myria software on this cluster:
+{script_name} update {cluster_name} {options}
+
 Destroy this cluster:
 {script_name} destroy {cluster_name} {options}
 
@@ -1266,7 +1277,7 @@ http://{coordinator_public_hostname}:{jupyter_web_port}
            myria_rest_port=ANSIBLE_GLOBAL_VARS['myria_rest_port'], ganglia_web_port=ANSIBLE_GLOBAL_VARS['ganglia_web_port'],
            jupyter_web_port=ANSIBLE_GLOBAL_VARS['jupyter_web_port'], private_key_file=kwargs['private_key_file'],
            remote_user=ANSIBLE_GLOBAL_VARS['remote_user'], script_name=SCRIPT_NAME, cluster_name=cluster_name,
-           region=kwargs['region'], options=options_str), fg='green')
+           new_cluster_size=kwargs['cluster_size']+1, region=kwargs['region'], options=options_str), fg='green')
 
     if click.confirm("Do you want to open the MyriaWeb interface in your browser?"):
         click.launch("http://%s:%d" % (coordinator_public_hostname, ANSIBLE_GLOBAL_VARS['myria_web_port']))
