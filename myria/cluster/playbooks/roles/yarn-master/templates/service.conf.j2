@@ -22,8 +22,8 @@ end script
 # check for running processes since the daemon startup scripts exit after starting daemon
 script
     while ((jps | grep -q NameNode) && (jps | grep -q ResourceManager)); do
-    sleep 5
-  done
+        sleep 5
+    done
 end script
 
 post-stop script
