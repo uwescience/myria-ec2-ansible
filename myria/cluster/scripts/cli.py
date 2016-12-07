@@ -1268,7 +1268,7 @@ Destroy this cluster:
 {script_name} destroy {cluster_name} {options}
 
 Log into the coordinator node:
-ssh -i {private_key_file} {remote_user}@{coordinator_public_hostname}
+{script_name} login {cluster_name} {options}
 
 MyriaWeb interface:
 http://{coordinator_public_hostname}:{myria_web_port}
@@ -1289,6 +1289,32 @@ http://{coordinator_public_hostname}:{jupyter_web_port}
 
     if click.confirm("Do you want to open the MyriaWeb interface in your browser?"):
         click.launch("http://%s:%d" % (coordinator_public_hostname, ANSIBLE_GLOBAL_VARS['myria_web_port']))
+
+
+@run.command('login')
+@click.argument('cluster_name')
+@click.option('--verbose', is_flag=True)
+@click.option('--profile', default=None,
+    help="Boto profile used to launch your cluster")
+@click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
+    help="AWS region your cluster was launched in")
+@click.option('--vpc-id', default=None,
+    help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
+@click.option('--key-pair', show_default=True, default=DEFAULTS['key_pair'],
+    help="EC2 key pair used to launch AMI builder instance")
+@click.option('--private-key-file', callback=default_key_file_from_key_pair,
+    help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
+def login_to_coordinator(cluster_name, **kwargs):
+    coordinator_public_hostname = get_coordinator_public_hostname(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+    if not coordinator_public_hostname:
+        raise ValueError("Couldn't resolve coordinator public DNS for cluster '%s' in region '%s'" % (cluster_name, kwargs['region']))
+    user_host = "'%s@%s'" % (ANSIBLE_GLOBAL_VARS['remote_user'], coordinator_public_hostname)
+    ssh_opts = ["ssh", "-i", kwargs['private_key_file'], "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"]
+    if kwargs['verbose']:
+        ssh_opts.append("-vvv")
+    ssh_args = ssh_opts + [user_host]
+    ssh_arg_str = ' '.join(ssh_args)
+    sys.exit(subprocess.call(ssh_arg_str, shell=True))
 
 
 @run.command('destroy')
