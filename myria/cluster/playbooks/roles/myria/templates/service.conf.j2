@@ -9,25 +9,26 @@ respawn
 respawn limit unlimited
 
 env SLEEP_TIME=30
+env YARN_EXE="{{ hadoop_home }}/bin/yarn"
 
 script
-    . {{ soft_link_base_path }}/hadoop/env.sh
+    . "{{ hadoop_home }}/env.sh"
     # configure REEF debug logging
 {% if CLUSTER_LOG_LEVEL in ['DEBUG', 'TRACE', 'ALL'] %}
     export YARN_OPTS="$YARN_OPTS -Djava.util.logging.config.class=org.apache.reef.util.logging.Config"
 {% endif %}
-    {{ soft_link_base_path }}/hadoop/bin/yarn jar {{myria_jar}} edu.washington.escience.myria.daemon.MyriaDriverLauncher -runtimeClass org.apache.reef.runtime.yarn.client.YarnClientConfiguration -configPath {{myria_path}}/myriadeploy -javaLibPath {{myria_path}}/build/libs -nativeLibPath {{myria_path}}/lib
+    "$YARN_EXE" jar "{{myria_jar}}" edu.washington.escience.myria.daemon.MyriaDriverLauncher -runtimeClass org.apache.reef.runtime.yarn.client.YarnClientConfiguration -configPath "{{myria_path}}/myriadeploy" -javaLibPath "{{myria_path}}/build/libs" -nativeLibPath "{{myria_path}}/lib"
 end script
 
 post-stop script
     GOAL=`initctl status $UPSTART_JOB | awk '{print $2}' | cut -d '/' -f 1`
     if [ "$GOAL" = "stop" ]; then
         # sometimes terminating the Driver launcher process fails to terminate the YARN application
-        . {{ soft_link_base_path }}/hadoop/env.sh
-        APP_NAME=`{{ soft_link_base_path }}/hadoop/bin/yarn application -list | awk 'FNR==3 {print $2}'`
-        APP_ID=`{{ soft_link_base_path }}/hadoop/bin/yarn application -list | awk 'FNR==3 {print $1}'`
+        . {{ hadoop_home }}/env.sh
+        APP_NAME=`"$YARN_EXE" application -list | awk 'FNR==3 {print $2}'`
+        APP_ID=`"$YARN_EXE" application -list | awk 'FNR==3 {print $1}'`
         if [ "$APP_NAME" = "MyriaDriver" ]; then
-            {{ soft_link_base_path }}/hadoop/bin/yarn application -kill "${APP_ID}"
+            "$YARN_EXE" application -kill "$APP_ID"
         fi
     else
         # sleep for configured interval between respawn attempts

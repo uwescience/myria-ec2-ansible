@@ -8,7 +8,6 @@ ebs_mount_point_prefix: /remote
 default_data_vol_mount_dir: "{{ (STORAGE_TYPE == 'ebs') | ternary(ebs_mount_point_prefix+'1', ephemeral_mount_point_prefix+'1') }}"
 default_data_dir: /data
 install_base_path: /usr/local
-soft_link_base_path: /opt
 remote_user: ubuntu
 
 
@@ -23,6 +22,7 @@ java_home: /usr/lib/jvm/java-8-oracle
 #   YARN Variables
 #----------------------------------
 
+hadoop_home: /opt/hadoop
 hadoop_user: hdadmin
 hadoop_group: hdadmin
 hadoop_password: $6$rounds=40000$1qjG/hovLZOkcerH$CK4Or3w8rR3KabccowciZZUeD.nIwR/VINUa2uPsmGK/2xnmOt80TjDwbof9rNvnYY6icCkdAR2qrFquirBtT1

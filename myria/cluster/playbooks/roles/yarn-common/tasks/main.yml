@@ -32,8 +32,8 @@
   tags:
     - configure
 
-- name: Creating a Symbolic Link in {{ soft_link_base_path }}/hadoop.
-  file: src={{ hadoop_install_path }} path={{ soft_link_base_path }}/hadoop state=link owner={{ hadoop_user }} group={{ hadoop_group }}
+- name: Creating a Symbolic Link in {{ hadoop_home }}.
+  file: src={{ hadoop_install_path }} path={{ hadoop_home }} state=link owner={{ hadoop_user }} group={{ hadoop_group }}
   tags:
     - configure
 
@@ -72,6 +72,6 @@
     - configure
 
 - name: Provision Hadoop 
-  shell: "{{ soft_link_base_path }}/hadoop/pbin/provision-hadoop.sh"
+  shell: "{{ hadoop_home }}/pbin/provision-hadoop.sh"
   tags:
     - configure

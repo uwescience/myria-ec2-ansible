@@ -1,7 +1,6 @@
 set -e
 
 export JAVA_HOME={{ java_home }}
-export HADOOP_INSTALL_DIR={{ soft_link_base_path }}
 export HADOOP_HOME={{ hadoop_home }}
 
 #hadoop home is here irrespective of version

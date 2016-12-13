@@ -97,3 +97,10 @@
   user: name={{ remote_user }} groups={{ myria_group }},{{ hadoop_group }} append=yes
   tags:
     - provision
+
+- name: Disable SSH login message
+  shell: "chmod -x /etc/update-motd.d/*"
+  tags:
+    - provision
+    # TODO: remove `configure` tag after creating new AMIs
+    - configure

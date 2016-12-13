@@ -16,7 +16,7 @@ respawn limit unlimited
 env SLEEP_TIME=30
 
 pre-start script
-    . {{ soft_link_base_path }}/hadoop/env.sh
+    . {{ hadoop_home }}/env.sh
 {% raw %}
     ${HADOOP_HOME}/sbin/hadoop-daemon.sh start datanode
     ${HADOOP_HOME}/sbin/yarn-daemon.sh start nodemanager
@@ -37,7 +37,7 @@ post-stop script
         sleep $SLEEP_TIME
     fi
 
-    . {{ soft_link_base_path }}/hadoop/env.sh
+    . {{ hadoop_home }}/env.sh
 {% raw %}
     ${HADOOP_HOME}/sbin/yarn-daemon.sh stop nodemanager
     ${HADOOP_HOME}/sbin/hadoop-daemon.sh stop datanode

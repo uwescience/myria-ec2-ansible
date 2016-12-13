@@ -1317,6 +1317,39 @@ def login_to_coordinator(cluster_name, **kwargs):
     sys.exit(subprocess.call(ssh_arg_str, shell=True))
 
 
+@run.command('logs')
+@click.argument('cluster_name')
+@click.option('--profile', default=None,
+    help="Boto profile used to launch your cluster")
+@click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
+    help="AWS region your cluster was launched in")
+@click.option('--vpc-id', default=None,
+    help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
+@click.option('--key-pair', show_default=True, default=DEFAULTS['key_pair'],
+    help="EC2 key pair used to launch AMI builder instance")
+@click.option('--private-key-file', callback=default_key_file_from_key_pair,
+    help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
+def print_logs(cluster_name, **kwargs):
+    coordinator_public_hostname = get_coordinator_public_hostname(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+    if not coordinator_public_hostname:
+        raise ValueError("Couldn't resolve coordinator public DNS for cluster '%s' in region '%s'" % (cluster_name, kwargs['region']))
+    user_host = "'%s@%s'" % (ANSIBLE_GLOBAL_VARS['remote_user'], coordinator_public_hostname)
+    ssh_opts = ["ssh", "-T", "-i", kwargs['private_key_file'], "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"]
+    ssh_args = ssh_opts + [user_host]
+    ssh_arg_str = ' '.join(ssh_args)
+    cmdline = """
+{ssh_arg_str} <<EOF
+while read APP_ID APP_NAME; do
+    if [ "\$APP_NAME" = "MyriaDriver" ]; then
+        sudo -E -u {hadoop_user} {yarn_exe} logs -applicationId "\$APP_ID" -appOwner {myria_user}
+    fi
+done < <({yarn_exe} application -list -appStates FINISHED,FAILED,KILLED | awk 'FNR>=3 {{print \$1, \$2}}')
+EOF
+""".format(ssh_arg_str=ssh_arg_str, yarn_exe="%s/bin/yarn" % ANSIBLE_GLOBAL_VARS['hadoop_home'],
+           hadoop_user=ANSIBLE_GLOBAL_VARS['hadoop_user'], myria_user=ANSIBLE_GLOBAL_VARS['myria_user'])
+    sys.exit(subprocess.call(cmdline, shell=True))
+
+
 @run.command('destroy')
 @click.argument('cluster_name')
 @click.option('--profile', default=None,

@@ -1,8 +1,6 @@
 #!/bin/bash
 
-SCRIPT_DIR={{ soft_link_base_path }}/hadoop/pbin
-
-# preceding blank line is necessary!
+SCRIPT_DIR={{ hadoop_home }}/pbin
 APP_USER={{ myria_user }}
 HADOOP_USER={{ hadoop_user }}
 HADOOP_GROUP={{ hadoop_group }}
