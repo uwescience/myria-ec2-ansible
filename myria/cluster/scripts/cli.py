@@ -1157,13 +1157,7 @@ def create_cluster(cluster_name, **kwargs):
         kwargs['workers_per_node'] = 1
         #TEMPORARY WHILE NOT ON MAIN BRANCH OR IMAGE
         kwargs['unprovisioned'] = True
-        if kwargs['role'] is None:
-            click.echo("Failed, need to specify a role with access to S3...")
-            terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=vpc_id)
-
-    ec2_ini_tmpfile = NamedTemporaryFile(delete=False)
-    os.environ['EC2_INI_PATH'] = ec2_ini_tmpfile.name
-    vpc_id = kwargs.get('vpc_id')
+        
     verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
     try:
         # we need to validate first without the VPC since it hasn't been determined yet
