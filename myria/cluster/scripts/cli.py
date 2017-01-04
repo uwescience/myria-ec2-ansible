@@ -1148,14 +1148,13 @@ def create_cluster(cluster_name, **kwargs):
     # If perfenforce is enabled, override the cluster configuration
     if kwargs['perfenforce']:
         click.echo("Adjusting cluster options for PerfEnforce...")
-        kwargs['cluster_size'] = 12
+        kwargs['cluster_size'] = 13
         kwargs['instance_type'] = 'm4.xlarge'
         kwargs['worker_mem'] = 12
         kwargs['worker_vcores'] = 2
         kwargs['node_mem_gb'] = 13
         kwargs['node_vcores'] = 3
         kwargs['workers_per_node'] = 1
-        #TEMPORARY WHILE NOT ON MAIN BRANCH OR IMAGE
         kwargs['unprovisioned'] = True
         
     verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
@@ -1297,7 +1296,12 @@ http://{coordinator_public_hostname}:{ganglia_web_port}
 
 Jupyter notebook interface:
 http://{coordinator_public_hostname}:{jupyter_web_port}
-""").format(coordinator_public_hostname=coordinator_public_hostname, myria_web_port=ANSIBLE_GLOBAL_VARS['myria_web_port'],
+""" + (
+"""
+PerfEnforce web interface:
+http://{coordinator_public_hostname}:{myria_web_port}/perfenforce
+""" if (kwargs.get('perfenforce')) else "")
+).format(coordinator_public_hostname=coordinator_public_hostname, myria_web_port=ANSIBLE_GLOBAL_VARS['myria_web_port'],
            myria_rest_port=ANSIBLE_GLOBAL_VARS['myria_rest_port'], ganglia_web_port=ANSIBLE_GLOBAL_VARS['ganglia_web_port'],
            jupyter_web_port=ANSIBLE_GLOBAL_VARS['jupyter_web_port'], private_key_file=kwargs['private_key_file'],
            remote_user=ANSIBLE_GLOBAL_VARS['remote_user'], script_name=SCRIPT_NAME, cluster_name=cluster_name,
