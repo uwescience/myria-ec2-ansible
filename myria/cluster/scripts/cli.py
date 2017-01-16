@@ -1143,8 +1143,6 @@ def run():
     type=click.Choice(LOG_LEVELS), default=DEFAULTS['cluster_log_level'])
 @click.option('--perfenforce', is_flag=True, help="Enable PerfEnforce (will override default cluster configuration)")
 def create_cluster(cluster_name, **kwargs):
-    click.echo(kwargs)
-
     # If perfenforce is enabled, override the cluster configuration
     if kwargs['perfenforce']:
         click.echo("Adjusting cluster options for PerfEnforce...")
