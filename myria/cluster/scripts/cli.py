@@ -33,7 +33,7 @@ import pkg_resources
 VERSION = pkg_resources.get_distribution("myria-cluster").version
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
-SCRIPT_NAME =  os.path.basename(sys.argv[0])
+SCRIPT_NAME = os.path.basename(sys.argv[0])
 # we want to use only the Ansible executable in our dependent package
 ANSIBLE_EXECUTABLE_PATH = find_executable("ansible-playbook")
 
@@ -1348,6 +1348,46 @@ EOF
 """.format(ssh_arg_str=ssh_arg_str, yarn_exe="%s/bin/yarn" % ANSIBLE_GLOBAL_VARS['hadoop_home'],
            hadoop_user=ANSIBLE_GLOBAL_VARS['hadoop_user'], myria_user=ANSIBLE_GLOBAL_VARS['myria_user'])
     sys.exit(subprocess.call(cmdline, shell=True))
+
+
+@run.command('exec')
+@click.argument('cluster_name')
+@click.option('--profile', default=None,
+    help="Boto profile used to launch your cluster")
+@click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
+    help="AWS region your cluster was launched in")
+@click.option('--vpc-id', default=None,
+    help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
+@click.option('--key-pair', show_default=True, default=DEFAULTS['key_pair'],
+    help="EC2 key pair used to launch AMI builder instance")
+@click.option('--private-key-file', callback=default_key_file_from_key_pair,
+    help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
+@click.option('--command',
+    help="Shell command to execute on all hosts in the cluster")
+def exec_command(cluster_name, **kwargs):
+    def exec_command_on_host(host, cmd):
+        user_host = "'%s@%s'" % (ANSIBLE_GLOBAL_VARS['remote_user'], host)
+        ssh_opts = ["ssh", "-T", "-i", kwargs['private_key_file'], "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"]
+        ssh_args = ssh_opts + [user_host]
+        ssh_arg_str = ' '.join(ssh_args)
+        cmdline = """
+{ssh_arg_str} <<EOF
+{cmd}
+EOF
+""".format(ssh_arg_str=ssh_arg_str, cmd=cmd)
+        return subprocess.call(cmdline, shell=True)
+
+    group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+    if not group:
+        click.secho("No cluster with name '%s' exists in region '%s'." % (cluster_name, kwargs['region']), fg='red')
+        sys.exit(1)
+    public_ips = [instance.ip_address for instance in group.instances()]
+    for public_ip in public_ips:
+        click.secho("Executing command on %s" % public_ip, fg='green')
+        ret = exec_command_on_host(public_ip, kwargs['command'])
+        if ret != 0:
+            click.secho("Command exited with error %d on host %s, exiting..." % (ret, public_ip), fg='red')
+            sys.exit(ret)
 
 
 @run.command('destroy')
