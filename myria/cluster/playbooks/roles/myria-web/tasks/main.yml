@@ -24,7 +24,7 @@
     - update
 
 - name: Change raco branch
-  shell: "git fetch && git checkout {{raco_branch}}"
+  shell: "git fetch --all && git reset --hard origin/{{raco_branch}}"
   args:
     chdir: "{{myria_web_path}}/submodules/raco"
   become: yes
