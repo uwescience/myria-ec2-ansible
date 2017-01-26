@@ -20,6 +20,17 @@
   </property>
 
   <property>
+    <name>fs.s3a.aws.credentials.provider</name>
+    <value>
+{% if ROLE is defined %}
+    com.amazonaws.auth.InstanceProfileCredentialsProvider
+{% else %}
+    org.apache.hadoop.fs.s3a.AnonymousAWSCredentialsProvider
+{% endif %}
+    </value>
+  </property>
+
+  <property>
     <name>fs.s3a.connection.maximum</name>
     <value>15</value>
     <description>Controls the maximum number of simultaneous connections to S3.</description>
