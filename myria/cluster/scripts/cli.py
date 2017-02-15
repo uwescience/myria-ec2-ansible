@@ -316,7 +316,18 @@ DEFAULTS = dict(
     data_volume_count=1,
     driver_mem_gb=0.5,
     heap_mem_fraction=0.9,
-    cluster_log_level='WARN'
+    cluster_log_level='WARN',
+)
+
+PERFENFORCE_DEFAULTS = dict(
+    cluster_size=13,
+    instance_type='m4.xlarge',
+    worker_mem_gb=12.0,
+    worker_vcores=2,
+    node_mem_gb=13.0,
+    node_vcores=3,
+    workers_per_node=1,
+    unprovisioned=True,
 )
 
 CLUSTER_METADATA_KEYS = dict(
@@ -976,6 +987,14 @@ def validate_workers_per_node(ctx, param, value):
     return value
 
 
+def validate_perfenforce(ctx, param, value):
+    if value:
+        for param in PERFENFORCE_DEFAULTS:
+            if param in ctx.params['__specified_values']:
+                raise click.BadParameter("You may not specify the --%s option with --perfenforce" % param)
+    return value
+
+
 def get_vpc_from_subnet(subnet_id, region, profile=None, verbosity=0):
     vpc_conn = boto.vpc.connect_to_region(region, profile_name=profile)
     try:
@@ -1068,7 +1087,7 @@ def run_playbook(playbook, private_key_file, extra_vars={}, tags=[], limit_hosts
                     with open(retry_filename,'r') as f:
                         failed_hosts = f.read().splitlines() 
                     assert failed_hosts # should always have at least one failed host with these exit codes
-                    click.secho("Playbook run failed on hosts %s, retrying (%d of %d)..." % (', '.join(failed_hosts), retries, max_retries), fg='yellow')
+                    click.secho("Playbook run failed on hosts %s, retrying (%d/%d)..." % (', '.join(failed_hosts), retries, max_retries), fg='yellow')
                     continue
                 else:
                     click.secho("Exceeded maximum %d retries!" % max_retries, fg='red')
@@ -1079,6 +1098,15 @@ def run_playbook(playbook, private_key_file, extra_vars={}, tags=[], limit_hosts
             return True
 
 
+class CustomOption(click.Option):
+    def full_process_value(self, ctx, value):
+        if value is not None:
+            if '__specified_values' not in ctx.params:
+                ctx.params['__specified_values'] = set()
+            ctx.params['__specified_values'].add(self.name)
+        return click.Option.full_process_value(self, ctx, value)
+
+
 @click.group(context_settings=CONTEXT_SETTINGS)
 @click.version_option(version=VERSION)
 def run():
@@ -1087,75 +1115,70 @@ def run():
 
 @run.command('create')
 @click.argument('cluster_name')
-@click.option('--verbose', is_flag=True, callback=validate_console_logging)
-@click.option('--silent', is_flag=True, callback=validate_console_logging)
-@click.option('--unprovisioned', is_flag=True, is_eager=True, help="Install required software at deployment")
-@click.option('--profile', default=None, is_eager=True,
+@click.option('--unprovisioned', cls=CustomOption, is_flag=True, help="Install required software at deployment")
+@click.option('--profile', cls=CustomOption, default=None,
     help="AWS credential profile used to launch your cluster")
-@click.option('--region', show_default=True, default=DEFAULTS['region'], is_eager=True, callback=validate_region,
+@click.option('--region', cls=CustomOption, show_default=True, default=DEFAULTS['region'], callback=validate_region,
     help="AWS region to launch your cluster in")
-@click.option('--zone', show_default=True, default=None, is_eager=True,
+@click.option('--zone', cls=CustomOption, show_default=True, default=None,
     help="AWS availability zone to launch your cluster in")
-@click.option('--key-pair', show_default=True, default=DEFAULTS['key_pair'],
-    help="EC2 key pair used to launch your cluster")
-@click.option('--private-key-file', callback=default_key_file_from_key_pair,
-    help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
-@click.option('--instance-type', show_default=True, default=DEFAULTS['instance_type'], callback=validate_instance_type, is_eager=True,
-    help="EC2 instance type for your cluster")
-@click.option('--cluster-size', show_default=True, default=DEFAULTS['cluster_size'],
-    type=click.IntRange(3, None), help="Number of EC2 instances in your cluster")
-@click.option('--ami-id', callback=default_ami_id_from_region,
-    help="ID of the AMI (Amazon Machine Image) used for your EC2 instances [default: %s]" % DEFAULT_PROVISIONED_HVM_AMI_IDS[DEFAULTS['region']])
-@click.option('--subnet-id', default=None, callback=validate_subnet_id,
-    help="ID of the VPC subnet in which to launch your EC2 instances")
-@click.option('--role', help="Name of an IAM role used to launch your EC2 instances")
-@click.option('--spot-price', help="Price in dollars of the maximum bid for an EC2 spot instance request")
-@click.option('--storage-type', show_default=True, callback=validate_storage_type, is_eager=True,
+@click.option('--storage-type', cls=CustomOption, show_default=True, callback=validate_storage_type,
     type=click.Choice(['ebs', 'local']), default=DEFAULTS['storage_type'],
     help="Type of the block device where Myria data is stored")
-@click.option('--data-volume-size-gb', type=int, callback=validate_data_volume_size,
-    help="Size of each EBS data volume in GB [default: %d]" % DEFAULTS['data_volume_size_gb'])
-@click.option('--data-volume-type', type=click.Choice(['gp2', 'io1', 'st1', 'sc1']), callback=validate_data_volume_type,
-    help="EBS data volume type: General Purpose SSD (gp2), Provisioned IOPS SSD (io1), Throughput Optimized HDD (st1), Cold HDD (sc1) [default: %s]" % DEFAULTS['data_volume_type'])
-@click.option('--data-volume-iops', type=int, default=None, callback=validate_data_volume_iops,
-    help="IOPS to provision for each EBS data volume (only applies to 'io1' volume type)")
-@click.option('--data-volume-count', type=click.IntRange(1, 8), callback=validate_data_volume_count,
-    help="Number of EBS data volumes to attach to this instance [default: %d]" % DEFAULTS['data_volume_count'])
-@click.option('--driver-mem-gb', type=float, show_default=True, default=DEFAULTS['driver_mem_gb'],
-    help="Physical memory (in GB) reserved for Myria driver")
-@click.option('--coordinator-mem-gb', type=float, callback=validate_coordinator_mem,
-    help="Physical memory (in GB) reserved for Myria coordinator [default: %s]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].coordinator_mem_gb)
-@click.option('--worker-mem-gb', type=float, callback=validate_worker_mem,
-    help="Physical memory (in GB) reserved for each Myria worker [default: %s]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].worker_mem_gb)
-@click.option('--heap-mem-fraction', type=float, show_default=True, default=DEFAULTS['heap_mem_fraction'],
-    help="Fraction of container memory used for JVM heap")
-@click.option('--coordinator-vcores', type=int, callback=validate_coordinator_vcores,
-    help="Number of virtual CPUs reserved for Myria coordinator [default: %d]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].coordinator_vcores)
-@click.option('--worker-vcores', type=int, callback=validate_worker_vcores,
-    help="Number of virtual CPUs reserved for each Myria worker [default: %d]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].worker_vcores)
-@click.option('--node-mem-gb', type=float, callback=validate_node_mem,
-    help="Physical memory (in GB) on each EC2 instance available for Myria processes [default: %s]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].node_mem_gb)
-@click.option('--node-vcores', type=int, callback=validate_node_vcores,
-    help="Number of virtual CPUs on each EC2 instance available for Myria processes [default: %d]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].node_vcores)
-@click.option('--workers-per-node', type=int, callback=validate_workers_per_node, is_eager=True,
+@click.option('--instance-type', cls=CustomOption, show_default=True, default=DEFAULTS['instance_type'], callback=validate_instance_type,
+    help="EC2 instance type for your cluster")
+@click.option('--workers-per-node', cls=CustomOption, type=int, callback=validate_workers_per_node,
     help="Number of Myria workers per cluster node [default: %d]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].workers_per_node)
-@click.option('--cluster-log-level', show_default=True,
+@click.option('--verbose', cls=CustomOption, is_flag=True, callback=validate_console_logging)
+@click.option('--silent', cls=CustomOption, is_flag=True, callback=validate_console_logging)
+@click.option('--key-pair', cls=CustomOption, show_default=True, default=DEFAULTS['key_pair'],
+    help="EC2 key pair used to launch your cluster")
+@click.option('--private-key-file', cls=CustomOption, callback=default_key_file_from_key_pair,
+    help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
+@click.option('--cluster-size', cls=CustomOption, show_default=True, default=DEFAULTS['cluster_size'],
+    type=click.IntRange(3, None), help="Number of EC2 instances in your cluster")
+@click.option('--ami-id', cls=CustomOption, callback=default_ami_id_from_region,
+    help="ID of the AMI (Amazon Machine Image) used for your EC2 instances [default: %s]" % DEFAULT_PROVISIONED_HVM_AMI_IDS[DEFAULTS['region']])
+@click.option('--subnet-id', cls=CustomOption, default=None, callback=validate_subnet_id,
+    help="ID of the VPC subnet in which to launch your EC2 instances")
+@click.option('--role', cls=CustomOption, help="Name of an IAM role used to launch your EC2 instances")
+@click.option('--spot-price', cls=CustomOption, help="Price in dollars of the maximum bid for an EC2 spot instance request")
+@click.option('--data-volume-size-gb', cls=CustomOption, type=int, callback=validate_data_volume_size,
+    help="Size of each EBS data volume in GB [default: %d]" % DEFAULTS['data_volume_size_gb'])
+@click.option('--data-volume-type', cls=CustomOption, type=click.Choice(['gp2', 'io1', 'st1', 'sc1']), callback=validate_data_volume_type,
+    help="EBS data volume type: General Purpose SSD (gp2), Provisioned IOPS SSD (io1), Throughput Optimized HDD (st1), Cold HDD (sc1) [default: %s]" % DEFAULTS['data_volume_type'])
+@click.option('--data-volume-iops', cls=CustomOption, type=int, default=None, callback=validate_data_volume_iops,
+    help="IOPS to provision for each EBS data volume (only applies to 'io1' volume type)")
+@click.option('--data-volume-count', cls=CustomOption, type=click.IntRange(1, 8), callback=validate_data_volume_count,
+    help="Number of EBS data volumes to attach to this instance [default: %d]" % DEFAULTS['data_volume_count'])
+@click.option('--driver-mem-gb', cls=CustomOption, type=float, show_default=True, default=DEFAULTS['driver_mem_gb'],
+    help="Physical memory (in GB) reserved for Myria driver")
+@click.option('--coordinator-mem-gb', cls=CustomOption, type=float, callback=validate_coordinator_mem,
+    help="Physical memory (in GB) reserved for Myria coordinator [default: %s]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].coordinator_mem_gb)
+@click.option('--worker-mem-gb', cls=CustomOption, type=float, callback=validate_worker_mem,
+    help="Physical memory (in GB) reserved for each Myria worker [default: %s]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].worker_mem_gb)
+@click.option('--heap-mem-fraction', cls=CustomOption, type=float, show_default=True, default=DEFAULTS['heap_mem_fraction'],
+    help="Fraction of container memory used for JVM heap")
+@click.option('--coordinator-vcores', cls=CustomOption, type=int, callback=validate_coordinator_vcores,
+    help="Number of virtual CPUs reserved for Myria coordinator [default: %d]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].coordinator_vcores)
+@click.option('--worker-vcores', cls=CustomOption, type=int, callback=validate_worker_vcores,
+    help="Number of virtual CPUs reserved for each Myria worker [default: %d]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].worker_vcores)
+@click.option('--node-mem-gb', cls=CustomOption, type=float, callback=validate_node_mem,
+    help="Physical memory (in GB) on each EC2 instance available for Myria processes [default: %s]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].node_mem_gb)
+@click.option('--node-vcores', cls=CustomOption, type=int, callback=validate_node_vcores,
+    help="Number of virtual CPUs on each EC2 instance available for Myria processes [default: %d]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].node_vcores)
+@click.option('--cluster-log-level', cls=CustomOption, show_default=True,
     type=click.Choice(LOG_LEVELS), default=DEFAULTS['cluster_log_level'])
-@click.option('--perfenforce', is_flag=True, help="Enable PerfEnforce (will override default cluster configuration)")
+@click.option('--perfenforce', cls=CustomOption, is_flag=True, callback=validate_perfenforce,
+    help="Enable PerfEnforce (will override default cluster configuration)")
 def create_cluster(cluster_name, **kwargs):
+    verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
     # If perfenforce is enabled, override the cluster configuration
     if kwargs['perfenforce']:
-        click.echo("Adjusting cluster options for PerfEnforce...")
-        kwargs['cluster_size'] = 13
-        kwargs['instance_type'] = 'm4.xlarge'
-        kwargs['worker_mem'] = 12
-        kwargs['worker_vcores'] = 2
-        kwargs['node_mem_gb'] = 13
-        kwargs['node_vcores'] = 3
-        kwargs['workers_per_node'] = 1
-        kwargs['unprovisioned'] = True
-        
-    verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
+        if verbosity > 0:
+            click.secho("Adjusting cluster options for PerfEnforce...", fg='yellow')
+        kwargs.update(PERFENFORCE_DEFAULTS)
+
     try:
         # we need to validate first without the VPC since it hasn't been determined yet
         if not validate_aws_settings(kwargs['region'], profile=kwargs['profile'], vpc_id=None, validate_default_vpc=False, prompt_for_credentials=True, verbosity=verbosity):
@@ -1207,7 +1230,7 @@ def create_cluster(cluster_name, **kwargs):
         launch_cluster(cluster_name, device_mapping=device_mapping, verbosity=verbosity, **kwargs)
 
         # run remote playbook to provision EC2 instances
-        extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None)
+        extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None and not k.startswith('__'))
         extra_vars.update(CLUSTER_NAME=cluster_name)
         if vpc_id:
             extra_vars.update(VPC_ID=vpc_id)
@@ -1628,7 +1651,7 @@ def validate_list_options(ctx, param, value):
 
 
 @run.command('list')
-@click.argument('cluster_name', required=False, is_eager=True)
+@click.argument('cluster_name', required=False)
 @click.option('--profile', default=None,
     help="Boto profile used to launch your cluster")
 @click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
@@ -1888,9 +1911,9 @@ def wait_until_image_available(ami_id, region, profile=None, verbosity=0):
     help="EC2 key pair used to launch AMI builder instance")
 @click.option('--private-key-file', callback=default_key_file_from_key_pair,
     help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
-@click.option('--instance-type', show_default=True, default=DEFAULTS['instance_type'], is_eager=True,
+@click.option('--instance-type', show_default=True, default=DEFAULTS['instance_type'],
     help="EC2 instance type for AMI builder instance")
-@click.option('--region', show_default=True, default=DEFAULTS['region'], is_eager=True, callback=validate_region,
+@click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
     help="AWS region to launch AMI builder instance")
 @click.option('--zone', show_default=True, default=None,
     help="AWS availability zone to launch AMI builder instance in")
@@ -2038,7 +2061,7 @@ def validate_vpc_ids(ctx, param, value):
 @click.argument('ami_name')
 @click.option('--profile', default=None,
     help="Boto profile used to create AMI")
-@click.option('--region', multiple=True, is_eager=True, callback=validate_regions,
+@click.option('--region', multiple=True, callback=validate_regions,
     help="Region in which AMI was created (can be specified multiple times)")
 @click.option('--vpc-id', default=None, callback=validate_vpc_ids,
     help="ID of the VPC (Virtual Private Cloud) in which AMI was created (can be specified multiple times, in same order as regions)")
@@ -2077,7 +2100,7 @@ def delete_image(ami_name, **kwargs):
 @run.command('list-images')
 @click.option('--profile', default=None,
     help="Boto profile used to create AMI")
-@click.option('--region', multiple=True, is_eager=True, callback=validate_regions,
+@click.option('--region', multiple=True, callback=validate_regions,
     help="Region in which AMI was created (can be specified multiple times)")
 @click.option('--vpc-id', default=None, callback=validate_vpc_ids,
     help="ID of the VPC (Virtual Private Cloud) in which AMI was created (can be specified multiple times, in same order as regions)")

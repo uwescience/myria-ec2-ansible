@@ -27,7 +27,7 @@ setup(
         # 2.2 introduced regression in git module:
         # https://github.com/ansible/ansible-modules-core/issues/5504
         'ansible == 2.1.2.0',
-        'click >= 6.6',
+        'click-uwescience >= 6.6',
         'boto >= 2.40.0',
         'PyYAML >= 3.11',
         'requests >= 2.10.0',
