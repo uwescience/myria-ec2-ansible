@@ -38,7 +38,6 @@ SCRIPT_NAME = os.path.basename(sys.argv[0])
 ANSIBLE_EXECUTABLE_PATH = find_executable("ansible-playbook")
 
 ANSIBLE_GLOBAL_VARS = yaml.load(file(os.path.join(playbooks_dir, "group_vars/all"), 'r'))
-MAX_CONCURRENT_TASKS = 20 # more than this can trigger "too many open files" on Mac
 MAX_RETRIES_DEFAULT = 5
 
 # Ansible configuration variables
@@ -989,9 +988,8 @@ def validate_workers_per_node(ctx, param, value):
 
 def validate_perfenforce(ctx, param, value):
     if value:
-        for param in PERFENFORCE_DEFAULTS:
-            if param in ctx.params['__specified_values']:
-                raise click.BadParameter("You may not specify the --%s option with --perfenforce" % param)
+        for p, v in PERFENFORCE_DEFAULTS.iteritems():
+            ctx.params[p] = v
     return value
 
 
@@ -1101,9 +1099,12 @@ def run_playbook(playbook, private_key_file, extra_vars={}, tags=[], limit_hosts
 class CustomOption(click.Option):
     def full_process_value(self, ctx, value):
         if value is not None:
-            if '__specified_values' not in ctx.params:
-                ctx.params['__specified_values'] = set()
-            ctx.params['__specified_values'].add(self.name)
+            if ctx.params.get('perfenforce') and self.name in PERFENFORCE_DEFAULTS:
+                raise click.BadParameter("You may not specify the --%s option with --perfenforce" % self.name)
+        else:
+            # if this option has already been set by a callback, then keep it
+            if self.name in ctx.params:
+                value = ctx.params[self.name]
         return click.Option.full_process_value(self, ctx, value)
 
 
@@ -1115,7 +1116,10 @@ def run():
 
 @run.command('create')
 @click.argument('cluster_name')
-@click.option('--unprovisioned', cls=CustomOption, is_flag=True, help="Install required software at deployment")
+@click.option('--perfenforce', cls=CustomOption, is_flag=True, callback=validate_perfenforce,
+    help="Enable PerfEnforce (will override default cluster configuration)")
+@click.option('--unprovisioned', cls=CustomOption, is_flag=True,# callback=validate_unprovisioned,
+    help="Install required software at deployment")
 @click.option('--profile', cls=CustomOption, default=None,
     help="AWS credential profile used to launch your cluster")
 @click.option('--region', cls=CustomOption, show_default=True, default=DEFAULTS['region'], callback=validate_region,
@@ -1169,16 +1173,12 @@ def run():
     help="Number of virtual CPUs on each EC2 instance available for Myria processes [default: %d]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].node_vcores)
 @click.option('--cluster-log-level', cls=CustomOption, show_default=True,
     type=click.Choice(LOG_LEVELS), default=DEFAULTS['cluster_log_level'])
-@click.option('--perfenforce', cls=CustomOption, is_flag=True, callback=validate_perfenforce,
-    help="Enable PerfEnforce (will override default cluster configuration)")
 def create_cluster(cluster_name, **kwargs):
     verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
-    # If perfenforce is enabled, override the cluster configuration
+    # If perfenforce is enabled, we override the cluster configuration
     if kwargs['perfenforce']:
-        if verbosity > 0:
-            click.secho("Adjusting cluster options for PerfEnforce...", fg='yellow')
-        kwargs.update(PERFENFORCE_DEFAULTS)
-
+        if verbosity > 1:
+            click.secho("Overriding cluster options for PerfEnforce:\n%s" % repr(PERFENFORCE_DEFAULTS), fg='yellow')
     try:
         # we need to validate first without the VPC since it hasn't been determined yet
         if not validate_aws_settings(kwargs['region'], profile=kwargs['profile'], vpc_id=None, validate_default_vpc=False, prompt_for_credentials=True, verbosity=verbosity):
