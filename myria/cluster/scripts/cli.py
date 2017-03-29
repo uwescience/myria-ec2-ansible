@@ -1173,6 +1173,8 @@ def run():
     help="Number of virtual CPUs on each EC2 instance available for Myria processes [default: %d]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].node_vcores)
 @click.option('--cluster-log-level', cls=CustomOption, show_default=True,
     type=click.Choice(LOG_LEVELS), default=DEFAULTS['cluster_log_level'])
+@click.option('--jupyter-password', cls=CustomOption, default=None,
+    help="Login password for the Jupyter notebook server (defaults to no authentication)")
 def create_cluster(cluster_name, **kwargs):
     verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
     # If perfenforce is enabled, we override the cluster configuration

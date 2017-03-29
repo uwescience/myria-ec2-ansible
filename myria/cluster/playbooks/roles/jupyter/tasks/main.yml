@@ -49,6 +49,24 @@
   tags:
     - configure
 
+- name: Generate password hash
+  command: python -c "from IPython.lib import passwd; print passwd(passphrase='{{JUPYTER_PASSWORD}}')"
+  register: password_hash
+  when: JUPYTER_PASSWORD is defined
+  tags:
+    - configure
+
+- name: Disable token auth
+  lineinfile: dest={{ jupyter_config_file }} regexp="^#?\s*c.NotebookApp.token" line="c.NotebookApp.token = ''" backrefs=yes state=present
+  tags:
+    - configure
+
+- name: Configure password auth
+  lineinfile: dest={{ jupyter_config_file }} regexp="^#?\s*c.NotebookApp.password" line="c.NotebookApp.password = '{{ password_hash.stdout }}'" backrefs=yes state=present
+  when: JUPYTER_PASSWORD is defined
+  tags:
+    - configure
+
 - name: Install jupyter-notebook service
   template: src=service.conf.j2 dest=/etc/init/jupyter-notebook.conf backup=yes mode=0644
   notify: restart jupyter-notebook
