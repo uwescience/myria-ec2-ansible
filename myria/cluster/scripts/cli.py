@@ -224,6 +224,9 @@ InstanceTypeConfig = namedtuple("InstanceTypeConfig", [
     "worker_vcores",
     "workers_per_node"])
 
+# Since we currently assign the Myria driver process to a random node,
+# we have to subtract 0.5GB (the driver memory default) from the total amount of
+# memory on a node available to the coordinator or worker processes.
 INSTANCE_TYPE_CONFIGS = {
     't2.medium': InstanceTypeConfig(3.0, 2.4, 2.4, 2, 1, 1, 1),
     't2.large': InstanceTypeConfig(6.0, 5.4, 5.4, 2, 1, 1, 1),
