@@ -1443,6 +1443,7 @@ EOF
 
 @run.command('destroy')
 @click.argument('cluster_name')
+@click.option('--silent', is_flag=True)
 @click.option('--profile', default=None,
     help="Boto profile used to launch your cluster")
 @click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
@@ -1450,6 +1451,7 @@ EOF
 @click.option('--vpc-id', default=None,
     help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
 def destroy_cluster(cluster_name, **kwargs):
+    verbosity = 0 if kwargs['silent'] else 1
     if not validate_aws_settings(kwargs['region'], kwargs['profile'], kwargs['vpc_id']):
         sys.exit(1)
     if click.confirm("Are you sure you want to destroy the cluster '%s' in the '%s' region?" % (cluster_name, kwargs['region'])):
