@@ -5,7 +5,7 @@
     - provision
 
 - name: Generate Jupyter notebook server config file
-  command: creates={{ jupyter_config_output_path }} jupyter notebook --generate-config
+  command: creates={{ jupyter_config_output_path }} jupyter notebook --generate-config --allow-root
   tags:
     - provision
 
