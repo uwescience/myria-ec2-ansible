@@ -53,6 +53,9 @@ os.environ['ANSIBLE_NOCOWS'] = "True"
 USER = os.getenv('USER')
 HOME = os.getenv('HOME')
 
+# we need to fudge memory values a bit for floating-point comparison
+MEMORY_EPSILON = 0.1
+
 # valid log4j log levels (https://logging.apache.org/log4j/1.2/apidocs/org/apache/log4j/Level.html)
 LOG_LEVELS = ['OFF', 'FATAL', 'ERROR', 'WARN', 'DEBUG', 'TRACE', 'ALL']
 
@@ -265,11 +268,23 @@ class InstanceTypeConfig(object):
             self.worker_vcores = (self.node_vcores - 1) / self.workers_per_node
         if worker_mem_gb is None:
             self.worker_mem_gb = (
-                self.node_mem_gb - self.driver_mem_gb) / self.workers_per_node
+                self.node_mem_gb - self.driver_mem_gb - MEMORY_EPSILON) / self.workers_per_node
         if coordinator_vcores is None:
             self.coordinator_vcores = self.node_vcores - 1
         if coordinator_mem_gb is None:
-            self.coordinator_mem_gb = self.node_mem_gb - self.driver_mem_gb
+            self.coordinator_mem_gb = self.node_mem_gb - self.driver_mem_gb - MEMORY_EPSILON
+        # need at least 1 vcore available for randomly assigned driver
+        assert self.worker_vcores * self.workers_per_node <= self.node_vcores - 1, \
+            "Total worker vcores (%d) exceeds available node vcores (%d)" % (self.worker_vcores * self.workers_per_node, self.node_vcores - 1)
+        # need enough memory available for randomly assigned driver
+        assert self.worker_mem_gb * self.workers_per_node <= self.node_mem_gb - self.driver_mem_gb, \
+            "Total worker memory (%f) exceeds available node memory (%f)" % (self.worker_mem_gb * self.workers_per_node, self.node_mem_gb - self.driver_mem_gb)
+        # driver may be randomly assigned to coordinator node
+        assert self.coordinator_vcores <= self.node_vcores - 1, \
+            "Coordinator vcores (%d) exceeds available node vcores (%d)" % (self.coordinator_vcores, self.node_vcores - 1)
+        assert self.coordinator_mem_gb <= self.node_mem_gb - self.driver_mem_gb, \
+            "Coordinator memory (%f) exceeds available node memory (%f)" % (self.coordinator_mem_gb, self.node_mem_gb - self.driver_mem_gb)
+
 
     def update(self, **kwargs):
         args = self.args.copy()
@@ -1216,12 +1231,12 @@ def run():
     help="Number of EBS data volumes to attach to this instance [default: %d]" % DEFAULTS['data_volume_count'])
 @click.option('--driver-mem-gb', cls=CustomOption, type=float, show_default=True, default=DEFAULTS['driver_mem_gb'], callback=validate_driver_mem,
     help="Physical memory (in GB) reserved for Myria driver")
+@click.option('--workers-per-node', cls=CustomOption, type=int, callback=validate_workers_per_node,
+    help="Number of Myria workers per cluster node [default: %d]" % INSTANCE_TYPE_DEFAULTS[DEFAULTS['instance_type']].workers_per_node)
 @click.option('--node-vcores', cls=CustomOption, type=int, callback=validate_node_vcores,
     help="Number of virtual CPUs on each EC2 instance available for Myria processes [default: %d]" % INSTANCE_TYPE_DEFAULTS[DEFAULTS['instance_type']].node_vcores)
 @click.option('--node-mem-gb', cls=CustomOption, type=float, callback=validate_node_mem,
     help="Physical memory (in GB) on each EC2 instance available for Myria processes [default: %s]" % INSTANCE_TYPE_DEFAULTS[DEFAULTS['instance_type']].node_mem_gb)
-@click.option('--workers-per-node', cls=CustomOption, type=int, callback=validate_workers_per_node,
-    help="Number of Myria workers per cluster node [default: %d]" % INSTANCE_TYPE_DEFAULTS[DEFAULTS['instance_type']].workers_per_node)
 @click.option('--worker-vcores', cls=CustomOption, type=int, callback=validate_worker_vcores,
     help="Number of virtual CPUs reserved for each Myria worker [default: %d]" % INSTANCE_TYPE_DEFAULTS[DEFAULTS['instance_type']].worker_vcores)
 @click.option('--worker-mem-gb', cls=CustomOption, type=float, callback=validate_worker_mem,
