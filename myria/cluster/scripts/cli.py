@@ -56,6 +56,31 @@ HOME = os.getenv('HOME')
 # valid log4j log levels (https://logging.apache.org/log4j/1.2/apidocs/org/apache/log4j/Level.html)
 LOG_LEVELS = ['OFF', 'FATAL', 'ERROR', 'WARN', 'DEBUG', 'TRACE', 'ALL']
 
+DEFAULTS = dict(
+    key_pair="%s-myria" % USER,
+    region='us-west-2',
+    instance_type='t2.large',
+    cluster_size=5,
+    storage_type='ebs',
+    data_volume_size_gb=20,
+    data_volume_type='gp2',
+    data_volume_count=1,
+    driver_mem_gb=0.5,
+    heap_mem_fraction=0.9,
+    cluster_log_level='WARN',
+)
+
+PERFENFORCE_DEFAULTS = dict(
+    cluster_size=13,
+    instance_type='m4.xlarge',
+    worker_mem_gb=12.0,
+    worker_vcores=2,
+    node_mem_gb=13.0,
+    node_vcores=3,
+    workers_per_node=1,
+    unprovisioned=True,
+)
+
 # see http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions
 ALL_REGIONS = [
     'us-west-2',
@@ -215,75 +240,104 @@ EBS_OPTIMIZED_INSTANCE_TYPES = [
     'x1.32xlarge',
 ]
 
-InstanceTypeConfig = namedtuple("InstanceTypeConfig", [
-    "node_mem_gb",
-    "coordinator_mem_gb",
-    "worker_mem_gb",
-    "node_vcores",
-    "coordinator_vcores",
-    "worker_vcores",
-    "workers_per_node"])
 
-# Since we currently assign the Myria driver process to a random node,
-# we have to subtract 0.5GB (the driver memory default) from the total amount of
-# memory on a node available to the coordinator or worker processes.
-INSTANCE_TYPE_CONFIGS = {
-    't2.medium': InstanceTypeConfig(3.0, 2.4, 2.4, 2, 1, 1, 1),
-    't2.large': InstanceTypeConfig(6.0, 5.4, 5.4, 2, 1, 1, 1),
-    't2.xlarge': InstanceTypeConfig(12.0, 11.4, 3.8, 4, 3, 1, 3),
-    't2.2xlarge': InstanceTypeConfig(24.0, 23.4, 3.3, 8, 7, 1, 7),
-    'c1.medium': InstanceTypeConfig(1.2, 0.6, 0.6, 2, 1, 1, 1),
-    'c1.xlarge': InstanceTypeConfig(5.5, 4.9, 0.7, 8, 7, 1, 7),
-    'c3.large': InstanceTypeConfig(3.0, 2.4, 2.4, 2, 1, 1, 1),
-    'c3.xlarge': InstanceTypeConfig(6.0, 5.4, 1.8, 4, 3, 1, 3),
-    'c3.2xlarge': InstanceTypeConfig(12.0, 11.4, 1.6, 8, 7, 1, 7),
-    'c3.4xlarge': InstanceTypeConfig(24.0, 23.4, 1.5, 16, 15, 1, 15),
-    'c3.8xlarge': InstanceTypeConfig(48.0, 47.4, 1.5, 32, 31, 1, 31),
-    'c4.large': InstanceTypeConfig(3.0, 2.4, 2.4, 2, 1, 1, 1),
-    'c4.xlarge': InstanceTypeConfig(6.0, 5.4, 1.8, 4, 3, 1, 3),
-    'c4.2xlarge': InstanceTypeConfig(12.0, 11.4, 1.6, 8, 7, 1, 7),
-    'c4.4xlarge': InstanceTypeConfig(24.0, 23.4, 1.5, 16, 15, 1, 15),
-    'c4.8xlarge': InstanceTypeConfig(48.0, 47.4, 1.3, 36, 35, 1, 35),
-    'cc2.8xlarge': InstanceTypeConfig(48.0, 47.4, 1.5, 32, 31, 1, 31),
-    'i2.xlarge': InstanceTypeConfig(24.0, 23.4, 7.8, 4, 3, 1, 3),
-    'i2.2xlarge': InstanceTypeConfig(48.0, 47.4, 6.7, 8, 7, 1, 7),
-    'i2.4xlarge': InstanceTypeConfig(96.0, 95.4, 6.3, 16, 15, 1, 15),
-    'i2.8xlarge': InstanceTypeConfig(192.0, 191.4, 6.1, 32, 31, 1, 31),
-    'hi1.4xlarge': InstanceTypeConfig(48.0, 47.4, 3.1, 16, 15, 1, 15),
-    'm1.large': InstanceTypeConfig(6.0, 5.4, 5.4, 2, 1, 1, 1),
-    'm1.xlarge': InstanceTypeConfig(12.0, 11.4, 3.8, 4, 3, 1, 3),
-    'm2.xlarge': InstanceTypeConfig(14.0, 13.4, 13.4, 2, 1, 1, 1),
-    'm2.2xlarge': InstanceTypeConfig(28.0, 27.4, 9.1, 4, 3, 1, 3),
-    'm2.4xlarge': InstanceTypeConfig(56.0, 55.4, 7.9, 8, 7, 1, 7),
-    'm3.large': InstanceTypeConfig(6.0, 5.4, 5.4, 2, 1, 1, 1),
-    'm3.xlarge': InstanceTypeConfig(12.0, 11.4, 3.8, 4, 3, 1, 3),
-    'm3.2xlarge': InstanceTypeConfig(24.0, 23.4, 3.3, 8, 7, 1, 7),
-    'm4.large': InstanceTypeConfig(6.0, 5.4, 5.4, 2, 1, 1, 1),
-    'm4.xlarge': InstanceTypeConfig(12.0, 11.4, 3.8, 4, 3, 1, 3),
-    'm4.2xlarge': InstanceTypeConfig(24.0, 23.4, 3.3, 8, 7, 1, 7),
-    'm4.4xlarge': InstanceTypeConfig(48.0, 47.4, 3.1, 16, 15, 1, 15),
-    'm4.10xlarge': InstanceTypeConfig(120.0, 119.4, 3.0, 40, 39, 1, 39),
-    'm4.16xlarge': InstanceTypeConfig(240.0, 239.4, 3.8, 64, 63, 1, 63),
-    'r3.large': InstanceTypeConfig(12.0, 11.4, 11.4, 2, 1, 1, 1),
-    'r3.xlarge': InstanceTypeConfig(24.0, 23.4, 7.8, 4, 3, 1, 3),
-    'r3.2xlarge': InstanceTypeConfig(48.0, 47.4, 6.7, 8, 7, 1, 7),
-    'r3.4xlarge': InstanceTypeConfig(96.0, 95.4, 6.3, 16, 15, 1, 15),
-    'r3.8xlarge': InstanceTypeConfig(192.0, 191.4, 6.1, 32, 31, 1, 31),
-    'r4.large': InstanceTypeConfig(12.0, 11.4, 11.4, 2, 1, 1, 1),
-    'r4.xlarge': InstanceTypeConfig(24.0, 23.4, 7.8, 4, 3, 1, 3),
-    'r4.2xlarge': InstanceTypeConfig(48.0, 47.4, 6.7, 8, 7, 1, 7),
-    'r4.4xlarge': InstanceTypeConfig(96.0, 95.4, 6.3, 16, 15, 1, 15),
-    'r4.8xlarge': InstanceTypeConfig(192.0, 191.4, 6.1, 32, 31, 1, 31),
-    'r4.16xlarge': InstanceTypeConfig(384.0, 383.4, 6.0, 64, 63, 1, 63),
-    'cr1.8xlarge': InstanceTypeConfig(192.0, 191.4, 6.1, 32, 31, 1, 31),
-    'x1.16xlarge': InstanceTypeConfig(800.0, 799.4, 12.6, 64, 63, 1, 63),
-    'x1.32xlarge': InstanceTypeConfig(1600.0, 1599.4, 12.5, 128, 127, 1, 127),
-    'd2.xlarge': InstanceTypeConfig(24.0, 23.4, 7.8, 4, 3, 1, 3),
-    'd2.2xlarge': InstanceTypeConfig(48.0, 47.4, 6.7, 8, 7, 1, 7),
-    'd2.4xlarge': InstanceTypeConfig(96.0, 95.4, 6.3, 16, 15, 1, 15),
-    'd2.8xlarge': InstanceTypeConfig(192.0, 191.4, 5.4, 36, 35, 1, 35),
-    'hs1.8xlarge': InstanceTypeConfig(96.0, 95.4, 6.3, 16, 15, 1, 15),
+class InstanceTypeConfig(object):
+    def __init__(self, node_vcores, node_mem_gb, driver_mem_gb=None,
+                 workers_per_node=None, worker_vcores=None,
+                 worker_mem_gb=None, coordinator_vcores=None,
+                 coordinator_mem_gb=None):
+        self.args = dict((k, v) for k, v in locals().iteritems() if k != 'self' and v is not None)
+        self.driver_mem_gb = driver_mem_gb
+        self.node_vcores = node_vcores
+        self.node_mem_gb = node_mem_gb
+        self.workers_per_node = workers_per_node
+        self.worker_vcores = worker_vcores
+        self.worker_mem_gb = worker_mem_gb
+        self.coordinator_vcores = coordinator_vcores
+        self.coordinator_mem_gb = coordinator_mem_gb
+        if driver_mem_gb is None:
+            self.driver_mem_gb = DEFAULTS['driver_mem_gb']
+        if workers_per_node is None:
+            self.workers_per_node = self.node_vcores - 1
+        elif workers_per_node > self.node_vcores - 1:
+            self.node_vcores = workers_per_node + 1
+        if worker_vcores is None:
+            self.worker_vcores = (self.node_vcores - 1) / self.workers_per_node
+        if worker_mem_gb is None:
+            self.worker_mem_gb = (
+                self.node_mem_gb - self.driver_mem_gb) / self.workers_per_node
+        if coordinator_vcores is None:
+            self.coordinator_vcores = self.node_vcores - 1
+        if coordinator_mem_gb is None:
+            self.coordinator_mem_gb = self.node_mem_gb - self.driver_mem_gb
+
+    def update(self, **kwargs):
+        args = self.args.copy()
+        args.update(**kwargs)
+        return InstanceTypeConfig(**args)
+
+    def __str__(self):
+        return str(self.__dict__)
+
+
+INSTANCE_TYPE_DEFAULTS = {
+    't2.medium': InstanceTypeConfig(node_mem_gb=3.0, node_vcores=2),
+    't2.large': InstanceTypeConfig(node_mem_gb=6.0, node_vcores=2),
+    't2.xlarge': InstanceTypeConfig(node_mem_gb=12.0, node_vcores=4),
+    't2.2xlarge': InstanceTypeConfig(node_mem_gb=24.0, node_vcores=8),
+    'c1.medium': InstanceTypeConfig(node_mem_gb=1.2, node_vcores=2),
+    'c1.xlarge': InstanceTypeConfig(node_mem_gb=5.5, node_vcores=8),
+    'c3.large': InstanceTypeConfig(node_mem_gb=3.0, node_vcores=2),
+    'c3.xlarge': InstanceTypeConfig(node_mem_gb=6.0, node_vcores=4),
+    'c3.2xlarge': InstanceTypeConfig(node_mem_gb=12.0, node_vcores=8),
+    'c3.4xlarge': InstanceTypeConfig(node_mem_gb=24.0, node_vcores=16),
+    'c3.8xlarge': InstanceTypeConfig(node_mem_gb=48.0, node_vcores=32),
+    'c4.large': InstanceTypeConfig(node_mem_gb=3.0, node_vcores=2),
+    'c4.xlarge': InstanceTypeConfig(node_mem_gb=6.0, node_vcores=4),
+    'c4.2xlarge': InstanceTypeConfig(node_mem_gb=12.0, node_vcores=8),
+    'c4.4xlarge': InstanceTypeConfig(node_mem_gb=24.0, node_vcores=16),
+    'c4.8xlarge': InstanceTypeConfig(node_mem_gb=48.0, node_vcores=36),
+    'cc2.8xlarge': InstanceTypeConfig(node_mem_gb=48.0, node_vcores=32),
+    'i2.xlarge': InstanceTypeConfig(node_mem_gb=24.0, node_vcores=4),
+    'i2.2xlarge': InstanceTypeConfig(node_mem_gb=48.0, node_vcores=8),
+    'i2.4xlarge': InstanceTypeConfig(node_mem_gb=96.0, node_vcores=16),
+    'i2.8xlarge': InstanceTypeConfig(node_mem_gb=192.0, node_vcores=32),
+    'hi1.4xlarge': InstanceTypeConfig(node_mem_gb=48.0, node_vcores=16),
+    'm1.large': InstanceTypeConfig(node_mem_gb=6.0, node_vcores=2),
+    'm1.xlarge': InstanceTypeConfig(node_mem_gb=12.0, node_vcores=4),
+    'm2.xlarge': InstanceTypeConfig(node_mem_gb=14.0, node_vcores=2),
+    'm2.2xlarge': InstanceTypeConfig(node_mem_gb=28.0, node_vcores=4),
+    'm2.4xlarge': InstanceTypeConfig(node_mem_gb=56.0, node_vcores=8),
+    'm3.large': InstanceTypeConfig(node_mem_gb=6.0, node_vcores=2),
+    'm3.xlarge': InstanceTypeConfig(node_mem_gb=12.0, node_vcores=4),
+    'm3.2xlarge': InstanceTypeConfig(node_mem_gb=24.0, node_vcores=8),
+    'm4.large': InstanceTypeConfig(node_mem_gb=6.0, node_vcores=2),
+    'm4.xlarge': InstanceTypeConfig(node_mem_gb=12.0, node_vcores=4),
+    'm4.2xlarge': InstanceTypeConfig(node_mem_gb=24.0, node_vcores=8),
+    'm4.4xlarge': InstanceTypeConfig(node_mem_gb=48.0, node_vcores=16),
+    'm4.10xlarge': InstanceTypeConfig(node_mem_gb=120.0, node_vcores=40),
+    'm4.16xlarge': InstanceTypeConfig(node_mem_gb=240.0, node_vcores=64),
+    'r3.large': InstanceTypeConfig(node_mem_gb=12.0, node_vcores=2),
+    'r3.xlarge': InstanceTypeConfig(node_mem_gb=24.0, node_vcores=4),
+    'r3.2xlarge': InstanceTypeConfig(node_mem_gb=48.0, node_vcores=8),
+    'r3.4xlarge': InstanceTypeConfig(node_mem_gb=96.0, node_vcores=16),
+    'r3.8xlarge': InstanceTypeConfig(node_mem_gb=192.0, node_vcores=32),
+    'r4.large': InstanceTypeConfig(node_mem_gb=12.0, node_vcores=2),
+    'r4.xlarge': InstanceTypeConfig(node_mem_gb=24.0, node_vcores=4),
+    'r4.2xlarge': InstanceTypeConfig(node_mem_gb=48.0, node_vcores=8),
+    'r4.4xlarge': InstanceTypeConfig(node_mem_gb=96.0, node_vcores=16),
+    'r4.8xlarge': InstanceTypeConfig(node_mem_gb=192.0, node_vcores=32),
+    'r4.16xlarge': InstanceTypeConfig(node_mem_gb=384.0, node_vcores=64),
+    'cr1.8xlarge': InstanceTypeConfig(node_mem_gb=192.0, node_vcores=32),
+    'x1.16xlarge': InstanceTypeConfig(node_mem_gb=800.0, node_vcores=64),
+    'x1.32xlarge': InstanceTypeConfig(node_mem_gb=1600.0, node_vcores=128),
+    'd2.xlarge': InstanceTypeConfig(node_mem_gb=24.0, node_vcores=4),
+    'd2.2xlarge': InstanceTypeConfig(node_mem_gb=48.0, node_vcores=8),
+    'd2.4xlarge': InstanceTypeConfig(node_mem_gb=96.0, node_vcores=16),
+    'd2.8xlarge': InstanceTypeConfig(node_mem_gb=192.0, node_vcores=36),
+    'hs1.8xlarge': InstanceTypeConfig(node_mem_gb=96.0, node_vcores=16),
 }
+
 
 SecurityGroupRule = namedtuple("SecurityGroupRule", ["ip_protocol", "from_port", "to_port", "cidr_ip", "src_group"])
 ssh_port = 22
@@ -307,30 +361,6 @@ SECURITY_GROUP_RULES = [
     SecurityGroupRule("tcp", nodemanager_web_port, nodemanager_web_port, "0.0.0.0/0", None),
 ]
 
-DEFAULTS = dict(
-    key_pair="%s-myria" % USER,
-    region='us-west-2',
-    instance_type='t2.large',
-    cluster_size=5,
-    storage_type='ebs',
-    data_volume_size_gb=20,
-    data_volume_type='gp2',
-    data_volume_count=1,
-    driver_mem_gb=0.5,
-    heap_mem_fraction=0.9,
-    cluster_log_level='WARN',
-)
-
-PERFENFORCE_DEFAULTS = dict(
-    cluster_size=13,
-    instance_type='m4.xlarge',
-    worker_mem_gb=12.0,
-    worker_vcores=2,
-    node_mem_gb=13.0,
-    node_vcores=3,
-    workers_per_node=1,
-    unprovisioned=True,
-)
 
 CLUSTER_METADATA_KEYS = dict(
     instance_type=str,
@@ -874,9 +904,16 @@ def validate_region(ctx, param, value):
 
 
 def validate_instance_type(ctx, param, value):
-    if value is not None and ctx.params.get('storage_type') == "local":
-        if value not in EPHEMERAL_VOLUMES_BY_INSTANCE_TYPE:
-            raise click.BadParameter("Instance type '%s' is incompatible with local storage" % value)
+    if value is not None:
+        if ctx.params.get('storage_type') == "local":
+            if value not in EPHEMERAL_VOLUMES_BY_INSTANCE_TYPE:
+                raise click.BadParameter("Instance type '%s' is incompatible with local storage" % value)
+        if value in INSTANCE_TYPE_DEFAULTS:
+            ctx.params['__instance_type_config'] = INSTANCE_TYPE_DEFAULTS[value]
+    else:
+        # HACK: callback shouldn't know about default
+        value = DEFAULTS['instance_type']
+        ctx.params['__instance_type_config'] = INSTANCE_TYPE_DEFAULTS[value]
     return value
 
 
@@ -892,7 +929,7 @@ def validate_data_volume_size(ctx, param, value):
         if ctx.params.get('storage_type') == "local":
             raise click.BadParameter("Cannot specify volume size with --storage-type=local")
     elif ctx.params.get('storage_type') == "ebs":
-        return DEFAULTS['data_volume_size_gb']
+        value = DEFAULTS['data_volume_size_gb']
     return value
 
 
@@ -901,7 +938,7 @@ def validate_data_volume_type(ctx, param, value):
         if ctx.params.get('storage_type') == "local":
             raise click.BadParameter("Cannot specify volume type with --storage-type=local")
     elif ctx.params.get('storage_type') == "ebs":
-        return DEFAULTS['data_volume_type']
+        value = DEFAULTS['data_volume_type']
     return value
 
 
@@ -919,73 +956,94 @@ def validate_data_volume_count(ctx, param, value):
         if value > ctx.params['workers_per_node']:
             raise click.BadParameter("--data-volume-count cannot exceed number of workers per node (%d)" % ctx.params['workers_per_node'])
     elif ctx.params.get('storage_type') == "ebs":
-        return DEFAULTS['data_volume_count']
+        value = DEFAULTS['data_volume_count']
     else:
         # local storage
         return 0
     return value
 
 
-def validate_node_mem(ctx, param, value):
-    if value is None:
-        if ctx.params['instance_type'] not in INSTANCE_TYPE_CONFIGS:
-            raise click.BadParameter("Instance type '%s' has no default for --node-mem-gb. You must supply a value." % ctx.params['instance_type'])
-        else:
-            return INSTANCE_TYPE_CONFIGS[ctx.params['instance_type']].node_mem_gb
-    return value
-
-
-def validate_worker_mem(ctx, param, value):
-    if value is None:
-        if ctx.params['instance_type'] not in INSTANCE_TYPE_CONFIGS:
-            raise click.BadParameter("Instance type '%s' has no default for --worker-mem-gb. You must supply a value." % ctx.params['instance_type'])
-        else:
-            return INSTANCE_TYPE_CONFIGS[ctx.params['instance_type']].worker_mem_gb
-    return value
-
-
-def validate_coordinator_mem(ctx, param, value):
-    if value is None:
-        if ctx.params['instance_type'] not in INSTANCE_TYPE_CONFIGS:
-            raise click.BadParameter("Instance type '%s' has no default for --coordinator-mem-gb. You must supply a value." % ctx.params['instance_type'])
-        else:
-            return INSTANCE_TYPE_CONFIGS[ctx.params['instance_type']].coordinator_mem_gb
+def validate_driver_mem(ctx, param, value):
+    # HACK: callback shouldn't know about default
+    real_val = value or DEFAULTS['driver_mem_gb']
+    ctx.params['__instance_type_config'] = ctx.params['__instance_type_config'].update(driver_mem_gb=real_val)
     return value
 
 
 def validate_node_vcores(ctx, param, value):
     if value is None:
-        if ctx.params['instance_type'] not in INSTANCE_TYPE_CONFIGS:
+        if ctx.params['instance_type'] not in INSTANCE_TYPE_DEFAULTS:
             raise click.BadParameter("Instance type '%s' has no default for --node-vcores. You must supply a value." % ctx.params['instance_type'])
         else:
-            return INSTANCE_TYPE_CONFIGS[ctx.params['instance_type']].node_vcores
+            value = ctx.params['__instance_type_config'].node_vcores
+    else:
+        ctx.params['__instance_type_config'] = ctx.params['__instance_type_config'].update(node_vcores=value)
     return value
 
 
-def validate_worker_vcores(ctx, param, value):
+def validate_node_mem(ctx, param, value):
     if value is None:
-        if ctx.params['instance_type'] not in INSTANCE_TYPE_CONFIGS:
-            raise click.BadParameter("Instance type '%s' has no default for --worker-vcores. You must supply a value." % ctx.params['instance_type'])
+        if ctx.params['instance_type'] not in INSTANCE_TYPE_DEFAULTS:
+            raise click.BadParameter("Instance type '%s' has no default for --node-mem-gb. You must supply a value." % ctx.params['instance_type'])
         else:
-            return INSTANCE_TYPE_CONFIGS[ctx.params['instance_type']].worker_vcores
-    return value
-
-
-def validate_coordinator_vcores(ctx, param, value):
-    if value is None:
-        if ctx.params['instance_type'] not in INSTANCE_TYPE_CONFIGS:
-            raise click.BadParameter("Instance type '%s' has no default for --coordinator-vcores. You must supply a value." % ctx.params['instance_type'])
-        else:
-            return INSTANCE_TYPE_CONFIGS[ctx.params['instance_type']].coordinator_vcores
+            value = ctx.params['__instance_type_config'].node_mem_gb
+    else:
+        ctx.params['__instance_type_config'] = ctx.params['__instance_type_config'].update(node_mem_gb=value)
     return value
 
 
 def validate_workers_per_node(ctx, param, value):
     if value is None:
-        if ctx.params['instance_type'] not in INSTANCE_TYPE_CONFIGS:
+        if ctx.params['instance_type'] not in INSTANCE_TYPE_DEFAULTS:
             raise click.BadParameter("Instance type '%s' has no default for --workers-per-node. You must supply a value." % ctx.params['instance_type'])
         else:
-            return INSTANCE_TYPE_CONFIGS[ctx.params['instance_type']].workers_per_node
+            value = ctx.params['__instance_type_config'].workers_per_node
+    else:
+        ctx.params['__instance_type_config'] = ctx.params['__instance_type_config'].update(workers_per_node=value)
+    return value
+
+
+def validate_worker_vcores(ctx, param, value):
+    if value is None:
+        if ctx.params['instance_type'] not in INSTANCE_TYPE_DEFAULTS:
+            raise click.BadParameter("Instance type '%s' has no default for --worker-vcores. You must supply a value." % ctx.params['instance_type'])
+        else:
+            value = ctx.params['__instance_type_config'].worker_vcores
+    else:
+        ctx.params['__instance_type_config'] = ctx.params['__instance_type_config'].update(worker_vcores=value)
+    return value
+
+
+def validate_worker_mem(ctx, param, value):
+    if value is None:
+        if ctx.params['instance_type'] not in INSTANCE_TYPE_DEFAULTS:
+            raise click.BadParameter("Instance type '%s' has no default for --worker-mem-gb. You must supply a value." % ctx.params['instance_type'])
+        else:
+            value = ctx.params['__instance_type_config'].worker_mem_gb
+    else:
+        ctx.params['__instance_type_config'] = ctx.params['__instance_type_config'].update(worker_mem_gb=value)
+    return value
+
+
+def validate_coordinator_vcores(ctx, param, value):
+    if value is None:
+        if ctx.params['instance_type'] not in INSTANCE_TYPE_DEFAULTS:
+            raise click.BadParameter("Instance type '%s' has no default for --coordinator-vcores. You must supply a value." % ctx.params['instance_type'])
+        else:
+            value = ctx.params['__instance_type_config'].coordinator_vcores
+    else:
+        ctx.params['__instance_type_config'] = ctx.params['__instance_type_config'].update(coordinator_vcores=value)
+    return value
+
+
+def validate_coordinator_mem(ctx, param, value):
+    if value is None:
+        if ctx.params['instance_type'] not in INSTANCE_TYPE_DEFAULTS:
+            raise click.BadParameter("Instance type '%s' has no default for --coordinator-mem-gb. You must supply a value." % ctx.params['instance_type'])
+        else:
+            value = ctx.params['__instance_type_config'].coordinator_mem_gb
+    else:
+        ctx.params['__instance_type_config'] = ctx.params['__instance_type_config'].update(coordinator_mem_gb=value)
     return value
 
 
@@ -1019,7 +1077,7 @@ def get_iam_user(region, profile=None, verbosity=0):
     except:
         pass
     if not iam_user and verbosity > 0:
-        click.secho("Warning: unable to find IAM user with credentials provided. IAM user tagging will be disabled.", fg='yellow')
+        click.secho("Unable to find IAM user with credentials provided. IAM user tagging will be disabled.", fg='yellow')
     return iam_user
 
 
@@ -1132,10 +1190,8 @@ def run():
 @click.option('--storage-type', cls=CustomOption, show_default=True, callback=validate_storage_type,
     type=click.Choice(['ebs', 'local']), default=DEFAULTS['storage_type'],
     help="Type of the block device where Myria data is stored")
-@click.option('--instance-type', cls=CustomOption, show_default=True, default=DEFAULTS['instance_type'], callback=validate_instance_type,
+@click.option('--instance-type', cls=CustomOption, callback=validate_instance_type, is_eager=True,
     help="EC2 instance type for your cluster")
-@click.option('--workers-per-node', cls=CustomOption, type=int, callback=validate_workers_per_node,
-    help="Number of Myria workers per cluster node [default: %d]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].workers_per_node)
 @click.option('--verbose', cls=CustomOption, is_flag=True, callback=validate_console_logging)
 @click.option('--silent', cls=CustomOption, is_flag=True, callback=validate_console_logging)
 @click.option('--key-pair', cls=CustomOption, show_default=True, default=DEFAULTS['key_pair'],
@@ -1158,27 +1214,30 @@ def run():
     help="IOPS to provision for each EBS data volume (only applies to 'io1' volume type)")
 @click.option('--data-volume-count', cls=CustomOption, type=click.IntRange(1, 8), callback=validate_data_volume_count,
     help="Number of EBS data volumes to attach to this instance [default: %d]" % DEFAULTS['data_volume_count'])
-@click.option('--driver-mem-gb', cls=CustomOption, type=float, show_default=True, default=DEFAULTS['driver_mem_gb'],
+@click.option('--driver-mem-gb', cls=CustomOption, type=float, show_default=True, default=DEFAULTS['driver_mem_gb'], callback=validate_driver_mem,
     help="Physical memory (in GB) reserved for Myria driver")
-@click.option('--coordinator-mem-gb', cls=CustomOption, type=float, callback=validate_coordinator_mem,
-    help="Physical memory (in GB) reserved for Myria coordinator [default: %s]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].coordinator_mem_gb)
+@click.option('--node-vcores', cls=CustomOption, type=int, callback=validate_node_vcores,
+    help="Number of virtual CPUs on each EC2 instance available for Myria processes [default: %d]" % INSTANCE_TYPE_DEFAULTS[DEFAULTS['instance_type']].node_vcores)
+@click.option('--node-mem-gb', cls=CustomOption, type=float, callback=validate_node_mem,
+    help="Physical memory (in GB) on each EC2 instance available for Myria processes [default: %s]" % INSTANCE_TYPE_DEFAULTS[DEFAULTS['instance_type']].node_mem_gb)
+@click.option('--workers-per-node', cls=CustomOption, type=int, callback=validate_workers_per_node,
+    help="Number of Myria workers per cluster node [default: %d]" % INSTANCE_TYPE_DEFAULTS[DEFAULTS['instance_type']].workers_per_node)
+@click.option('--worker-vcores', cls=CustomOption, type=int, callback=validate_worker_vcores,
+    help="Number of virtual CPUs reserved for each Myria worker [default: %d]" % INSTANCE_TYPE_DEFAULTS[DEFAULTS['instance_type']].worker_vcores)
 @click.option('--worker-mem-gb', cls=CustomOption, type=float, callback=validate_worker_mem,
-    help="Physical memory (in GB) reserved for each Myria worker [default: %s]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].worker_mem_gb)
+    help="Physical memory (in GB) reserved for each Myria worker [default: %s]" % INSTANCE_TYPE_DEFAULTS[DEFAULTS['instance_type']].worker_mem_gb)
+@click.option('--coordinator-vcores', cls=CustomOption, type=int, callback=validate_coordinator_vcores,
+    help="Number of virtual CPUs reserved for Myria coordinator [default: %d]" % INSTANCE_TYPE_DEFAULTS[DEFAULTS['instance_type']].coordinator_vcores)
+@click.option('--coordinator-mem-gb', cls=CustomOption, type=float, callback=validate_coordinator_mem,
+    help="Physical memory (in GB) reserved for Myria coordinator [default: %s]" % INSTANCE_TYPE_DEFAULTS[DEFAULTS['instance_type']].coordinator_mem_gb)
 @click.option('--heap-mem-fraction', cls=CustomOption, type=float, show_default=True, default=DEFAULTS['heap_mem_fraction'],
     help="Fraction of container memory used for JVM heap")
-@click.option('--coordinator-vcores', cls=CustomOption, type=int, callback=validate_coordinator_vcores,
-    help="Number of virtual CPUs reserved for Myria coordinator [default: %d]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].coordinator_vcores)
-@click.option('--worker-vcores', cls=CustomOption, type=int, callback=validate_worker_vcores,
-    help="Number of virtual CPUs reserved for each Myria worker [default: %d]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].worker_vcores)
-@click.option('--node-mem-gb', cls=CustomOption, type=float, callback=validate_node_mem,
-    help="Physical memory (in GB) on each EC2 instance available for Myria processes [default: %s]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].node_mem_gb)
-@click.option('--node-vcores', cls=CustomOption, type=int, callback=validate_node_vcores,
-    help="Number of virtual CPUs on each EC2 instance available for Myria processes [default: %d]" % INSTANCE_TYPE_CONFIGS[DEFAULTS['instance_type']].node_vcores)
 @click.option('--cluster-log-level', cls=CustomOption, show_default=True,
     type=click.Choice(LOG_LEVELS), default=DEFAULTS['cluster_log_level'])
 @click.option('--jupyter-password', cls=CustomOption, default=None,
     help="Login password for the Jupyter notebook server (defaults to no authentication)")
-def create_cluster(cluster_name, **kwargs):
+@click.pass_context
+def create_cluster(ctx, cluster_name, **kwargs):
     verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
     # If perfenforce is enabled, we override the cluster configuration
     if kwargs['perfenforce']:
@@ -1277,7 +1336,10 @@ Please refer to the error message above for diagnosis. Exiting (not destroying c
         try:
             terminate_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
         except:
-            pass # cluster may or may not exist at this point
+            # cluster may or may not exist at this point
+            if verbosity > 1:
+                click.secho(traceback.format_exc(), fg='red')
+            click.secho("Failed to terminate cluster, exiting...", fg='red')
         sys.exit(1)
 
     click.secho(("""
