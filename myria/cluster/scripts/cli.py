@@ -887,7 +887,7 @@ http://boto3.readthedocs.io/en/latest/guide/configuration.html
             click.secho("""
 Your AWS credentials for profile {profile} are not authorized for EC2 access.
 Please ask your administrator for authorization.
-""".format(region=region, vpc_id=vpc_id), fg='red')
+""".format(region=region, profile=profile, vpc_id=vpc_id), fg='red')
             return False
 
     vpc_conn = boto.vpc.connect_to_region(region, profile_name=profile)
@@ -1266,6 +1266,7 @@ def create_cluster(ctx, cluster_name, **kwargs):
         if not validate_aws_settings(kwargs['region'], profile=kwargs['profile'], vpc_id=None, validate_default_vpc=False, prompt_for_credentials=True, verbosity=verbosity):
             sys.exit(1)
         vpc_id = None
+        kwargs['vpc_id'] = None
         if kwargs['subnet_id']:
             vpc_id = get_vpc_from_subnet(kwargs['subnet_id'], kwargs['region'], profile=kwargs['profile'], verbosity=verbosity)
             if not vpc_id:
