@@ -860,7 +860,10 @@ AWS configuration exists but credentials for the profile '{profile}' are misconf
 aws_access_key_id = {access_key}
 aws_secret_access_key = {secret_key}
 """.format(profile_name=profile_name, access_key=access_key, secret_key=secret_key)
-                    aws_cred_file = os.path.join(HOME, ".aws/credentials")
+                    aws_dir = os.path.join(HOME, ".aws")
+                    if not os.path.exists(aws_dir):
+                        os.makedirs(aws_dir)
+                    aws_cred_file = os.path.join(aws_dir, "credentials")
                     write_secure_file(aws_cred_file, aws_cred_file_content)
                     click.secho("""
 Your AWS credentials for the profile '{profile_name}' have been written to `{aws_cred_file}`.
