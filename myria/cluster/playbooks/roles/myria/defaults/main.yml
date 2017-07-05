@@ -2,9 +2,10 @@
 myria_repository_url: https://github.com/uwescience/myria.git
 myria_path: '{{install_base_path}}/myria'
 myria_jar: '{{myria_path}}/build/libs/myria-{{myria_version}}-all.jar'
-myria_branch: master
+myria_branch: elastic_cluster
 namenode_port: 8020
 coordinator_port: 8001
 worker_base_port: 9001
 database_password: uwdb # TODO fix me :(
 heap_mem_fraction: "{{ HEAP_MEM_FRACTION | float }}"
+persist_uri: "{{ PERSIST_URI | default(\"hdfs://{{hostvars[groups['coordinator'][0]]['private_dns_name']}}:{{namenode_port}}\") }}"

@@ -1254,8 +1254,11 @@ def run():
     type=click.Choice(LOG_LEVELS), default=DEFAULTS['cluster_log_level'])
 @click.option('--jupyter-password', cls=CustomOption, default=None,
     help="Login password for the Jupyter notebook server (defaults to no authentication)")
-@click.pass_context
-def create_cluster(ctx, cluster_name, **kwargs):
+@click.option('--elastic-mode', cls=CustomOption, is_flag=True,
+    help="Configure Myria in elastic mode")
+@click.option('--persist-uri', cls=CustomOption, default=None,
+    help="URL pointing to an HDFS or S3 root directory for persisting relations (defaults to local HDFS root)")
+def create_cluster(cluster_name, **kwargs):
     verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
     # If perfenforce is enabled, we override the cluster configuration
     if kwargs['perfenforce']:

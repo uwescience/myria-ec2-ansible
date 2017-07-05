@@ -65,7 +65,8 @@
                                                     --master-cores-number {{coordinator_vcores}} \
                                                     --worker-cores-number {{worker_vcores}} \
                                                     --worker-databases {% for i in range((WORKERS_PER_NODE|int) * (groups['workers']|length)) %} myria_{{i+1}} {% endfor %} \
-                                                    --persist-uri hdfs://{{hostvars[groups['coordinator'][0]]['private_dns_name']}}:{{namenode_port}}
+                                                    --persist-uri {{persist_uri}} \
+                                                    {{ELASTIC_MODE | ternary('--elastic-mode', '')}}
           > ${TEMPFILE} && mv ${TEMPFILE} {{myria_path}}/myriadeploy/deployment.cfg"
   args:
     chdir: "{{myria_path}}/myriadeploy"
