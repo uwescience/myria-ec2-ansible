@@ -19,6 +19,7 @@ import requests
 
 import boto
 import boto.ec2
+import boto.s3
 import boto.vpc
 import boto.iam
 from boto.exception import EC2ResponseError
@@ -1803,6 +1804,9 @@ def validate_resize_command(ctx, param, value):
     if value is not None:
         if ctx.params.get('cluster_size') or ctx.params.get('increment'):
             raise click.BadParameter("Cannot specify both --cluster-size and --increment")
+    else:
+        if not (ctx.params.get('cluster_size') or ctx.params.get('increment')):
+            raise click.BadParameter("Must specify either --cluster-size or --increment")
     return value
 
 
@@ -2188,6 +2192,7 @@ def delete_image(ami_name, **kwargs):
             sys.exit(1)
 
 
+# complete list of image attributes at http://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeImages.html
 @run.command('list-images')
 @click.option('--profile', default=None,
     help="Boto profile used to create AMI")
@@ -2228,35 +2233,99 @@ def list_images(**kwargs):
         sys.exit(1)
 
 
-# IMAGE ATTRIBUTES
-# root_device_type
-# ramdisk_id
-# id
-# owner_alias
-# billing_products
-# tags
-# platform
-# state
-# location
-# type
-# virtualization_type
-# sriov_net_support
-# architecture
-# description
-# block_device_mapping
-# kernel_id
-# owner_id
-# is_public
-# instance_lifecycle
-# creationDate
-# name
-# hypervisor
-# region
-# item
-# connection
-# root_device_name
-# ownerId
-# product_codes
+# Copied from https://github.com/aws/aws-cli/blob/833716e1dae531fe8c3835c5feaa50d255c01be1/awscli/customizations/s3/utils.py
+def find_bucket_key(s3_path):
+    """
+    This is a helper function that given an s3 path such that the path is of
+    the form: bucket/key
+    It will return the bucket and the key represented by the s3 path
+    """
+    s3_components = s3_path.split('/')
+    bucket = s3_components[0]
+    s3_key = ""
+    if len(s3_components) > 1:
+        s3_key = '/'.join(s3_components[1:])
+    return bucket, s3_key
+
+
+# Copied from https://github.com/aws/aws-cli/blob/833716e1dae531fe8c3835c5feaa50d255c01be1/awscli/customizations/s3/utils.py
+def split_s3_bucket_key(s3_path):
+    """Split s3 path into bucket and key prefix.
+    This will also handle the s3:// prefix.
+    :return: Tuple of ('bucketname', 'keyname')
+    """
+    if s3_path.startswith('s3://'):
+        s3_path = s3_path[5:]
+    return find_bucket_key(s3_path)
+
+
+def validate_load_command(ctx, param, value):
+    if value is not None:
+        if ctx.params.get('manifest_uri') or ctx.params.get('manifest_file'):
+            raise click.BadParameter("Cannot specify both --manifest-uri and --manifest-file")
+    else:
+        if not (ctx.params.get('manifest_uri') or ctx.params.get('manifest_file')):
+            raise click.BadParameter("Must specify either --manifest-uri or --manifest-file")
+    return value
+
+
+@run.command('load-dataset')
+@click.argument('cluster_name')
+@click.option('--silent', is_flag=True)
+@click.option('--verbose', is_flag=True)
+@click.option('--profile', default=None,
+    help="Boto profile used to launch your cluster")
+@click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
+    help="AWS region your cluster was launched in")
+@click.option('--vpc-id', default=None,
+    help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
+@click.option('--relation',
+    help="Name of relation to load from persistent storage")
+@click.option('--manifest-uri',
+    help="URL (S3 or HTTP/HTTPS) pointing to a manifest file describing name, location, schema, and partitioning of persisted relation")
+@click.option('--manifest-file',
+    help="Local file path pointing to a manifest file describing name, location, schema, and partitioning of persisted relation")
+def load_persisted_dataset(cluster_name, **kwargs):
+    verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
+    if not validate_aws_settings(kwargs['region'], kwargs['profile'], kwargs['vpc_id'], verbosity=verbosity):
+        sys.exit(1)
+    # download manifest file
+    manifest = None
+    if kwargs.get('manifest_uri'):
+        if kwargs['manifest_uri'].startswith('s3'):
+            # need to go through the S3 API in case the object is private
+            bucket_name, key_name = split_s3_bucket_key(kwargs['manifest_uri'])
+            s3 = boto.s3.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
+            bucket = s3.get_bucket(bucket_name)
+            key = boto.s3.key.Key(bucket)
+            key.key = key_name
+            manifest = json.loads(key.get_contents_as_string())
+        else:
+            manifest = requests.get(kwargs['manifest_uri']).json()
+    else:
+        with open(kwargs['manifest_file']) as f:
+            manifest = json.loads(f.read())
+    coordinator_hostname = get_coordinator_public_hostname(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+    if not coordinator_hostname:
+        raise ValueError("Couldn't resolve coordinator public DNS for cluster '%s'" % cluster_name)
+    ingest_url = "http://%(host)s:%(port)d/dataset/persistedIngest" % dict(host=coordinator_hostname, port=ANSIBLE_GLOBAL_VARS['myria_rest_port'])
+    try:
+        resp = requests.post(ingest_url, json=manifest)
+    except requests.ConnectionError:
+        if verbosity > 0:
+            click.secho("Unable to connect to Myria service, exiting...", fg='red')
+        sys.exit(1)
+    except:
+        if verbosity > 0:
+            click.secho("Error response from Myria service (status code %d), exiting..." % resp.status_code, fg='red')
+        if verbosity > 1:
+            click.secho(resp.text, fg='red')
+        sys.exit(1)
+    else:
+        relation_name = "%s:%s:%s" % (manifest['relationKey']['userName'],
+                                      manifest['relationKey']['programName'],
+                                      manifest['relationKey']['relationName'])
+        click.secho("Successfully loaded dataset '%s'" % relation_name, fg='green')
 
 
 if __name__ == '__main__':
