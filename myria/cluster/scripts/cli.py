@@ -770,7 +770,7 @@ def wait_for_all_workers_online(cluster_name, region, profile=None, vpc_id=None,
             if verbosity > 0:
                 click.secho("Myria service unavailable, waiting 60 seconds...", fg='yellow')
         else:
-            if workers_resp.status_code == requests.codes.ok:
+            if workers_resp.ok:
                 workers = workers_resp.json()
                 workers_alive_resp = requests.get(workers_url + "/alive")
                 workers_alive = workers_alive_resp.json()
@@ -2279,8 +2279,6 @@ def validate_load_command(ctx, param, value):
     help="AWS region your cluster was launched in")
 @click.option('--vpc-id', default=None,
     help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
-@click.option('--relation',
-    help="Name of relation to load from persistent storage")
 @click.option('--manifest-uri',
     help="URL (S3 or HTTP/HTTPS) pointing to a manifest file describing name, location, schema, and partitioning of persisted relation")
 @click.option('--manifest-file',
@@ -2315,17 +2313,57 @@ def load_persisted_dataset(cluster_name, **kwargs):
         if verbosity > 0:
             click.secho("Unable to connect to Myria service, exiting...", fg='red')
         sys.exit(1)
-    except:
+    else:
+        if resp.ok:
+            relation_name = "%s:%s:%s" % (manifest['relationKey']['userName'],
+                                          manifest['relationKey']['programName'],
+                                          manifest['relationKey']['relationName'])
+            click.secho("Successfully loaded dataset '%s'" % relation_name, fg='green')
+        else:
+            if verbosity > 0:
+                click.secho("Error response from Myria service (status code %d), exiting..." % resp.status_code, fg='red')
+            if verbosity > 1:
+                click.secho(resp.text, fg='red')
+            sys.exit(1)
+
+
+@run.command('save-dataset')
+@click.argument('cluster_name')
+@click.option('--silent', is_flag=True)
+@click.option('--verbose', is_flag=True)
+@click.option('--profile', default=None,
+    help="Boto profile used to launch your cluster")
+@click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
+    help="AWS region your cluster was launched in")
+@click.option('--vpc-id', default=None,
+    help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
+@click.option('--relation',
+    help="Fully qualified name (user:program:relation) of relation to save to persistent storage")
+def save_persisted_dataset(cluster_name, **kwargs):
+    verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
+    user_name, program_name, relation_name = kwargs['relation'].split(':')
+    if not validate_aws_settings(kwargs['region'], kwargs['profile'], kwargs['vpc_id'], verbosity=verbosity):
+        sys.exit(1)
+    coordinator_hostname = get_coordinator_public_hostname(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+    if not coordinator_hostname:
+        raise ValueError("Couldn't resolve coordinator public DNS for cluster '%s'" % cluster_name)
+    persist_url = "http://%(host)s:%(port)d/dataset/user-%(user)s/program-%(program)s/relation-%(relation)s/persist" % dict(
+        host=coordinator_hostname, port=ANSIBLE_GLOBAL_VARS['myria_rest_port'], user=user_name, program=program_name, relation=relation_name)
+    try:
+        resp = requests.post(persist_url)
+    except requests.ConnectionError:
         if verbosity > 0:
-            click.secho("Error response from Myria service (status code %d), exiting..." % resp.status_code, fg='red')
-        if verbosity > 1:
-            click.secho(resp.text, fg='red')
+            click.secho("Unable to connect to Myria service, exiting...", fg='red')
         sys.exit(1)
     else:
-        relation_name = "%s:%s:%s" % (manifest['relationKey']['userName'],
-                                      manifest['relationKey']['programName'],
-                                      manifest['relationKey']['relationName'])
-        click.secho("Successfully loaded dataset '%s'" % relation_name, fg='green')
+        if resp.ok:
+            click.secho("Successfully persisted dataset '%s'.\nSave this manifest to load it later:\n\n%s" % (kwargs['relation'], resp.text), fg='green')
+        else:
+            if verbosity > 0:
+                click.secho("Error response from Myria service (status code %d), exiting..." % resp.status_code, fg='red')
+            if verbosity > 1:
+                click.secho(resp.text, fg='red')
+            sys.exit(1)
 
 
 if __name__ == '__main__':
