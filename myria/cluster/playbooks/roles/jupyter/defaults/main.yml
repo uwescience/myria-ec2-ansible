@@ -4,4 +4,7 @@ jupyter_config_output_path: '/root/.jupyter/jupyter_notebook_config.py'
 jupyter_config_dir: '/etc/jupyter'
 jupyter_config_file: '{{ jupyter_config_dir }}/jupyter_notebook_config.py'
 jupyter_notebooks_dir: '/usr/local/share/jupyter/notebooks'
-jupyter_sample_notebook_url: 'https://raw.githubusercontent.com/uwescience/myria-python/master/ipnb%20examples/myria.ipynb'
+jupyter_sample_notebooks: [
+  { url: 'https://raw.githubusercontent.com/uwescience/myria-python/master/ipnb%20examples/myria.ipynb', filename: 'myria_examples.ipynb' },
+  { url: 'https://raw.githubusercontent.com/uwescience/myria-python/master/ipnb%20examples/Cosmo8+Demo+Notebook.ipynb', filename: 'cosmo8_demo.ipynb' }
+]
