@@ -24,8 +24,9 @@
   tags:
     - provision
 
-- name: Copy sample notebook to notebook directory
-  get_url: url='{{ jupyter_sample_notebook_url }}' dest='{{ jupyter_notebooks_dir }}/myria_examples.ipynb' mode=0775 validate_certs=no timeout=300
+- name: Copy sample notebooks to notebook directory
+  get_url: url='{{ item.url }}' dest='{{ jupyter_notebooks_dir }}/{{ item.filename }}' mode=0775 validate_certs=no timeout=300
+  with_items: jupyter_sample_notebooks
   tags:
     - provision
 
