@@ -1418,6 +1418,16 @@ http://{coordinator_public_hostname}:{myria_web_port}/perfenforce
         click.launch("http://%s:%d" % (coordinator_public_hostname, ANSIBLE_GLOBAL_VARS['myria_web_port']))
 
 
+def default_key_file(ctx, param, value):
+    if value is None:
+        qualified_key_pair = "%s_%s" % (DEFAULTS['key_pair'], ctx.params['region'])
+        if ctx.params['profile']:
+            qualified_key_pair = "%s_%s_%s" % (DEFAULTS['key_pair'], ctx.params['profile'], ctx.params['region'])
+        return "%s/.ssh/%s.pem" % (HOME, qualified_key_pair)
+    else:
+        return value
+
+
 @run.command('login')
 @click.argument('cluster_name')
 @click.option('--verbose', is_flag=True)
@@ -1427,9 +1437,7 @@ http://{coordinator_public_hostname}:{myria_web_port}/perfenforce
     help="AWS region your cluster was launched in")
 @click.option('--vpc-id', default=None,
     help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
-@click.option('--key-pair', show_default=True, default=DEFAULTS['key_pair'],
-    help="EC2 key pair used to launch AMI builder instance")
-@click.option('--private-key-file', callback=default_key_file_from_key_pair,
+@click.option('--private-key-file', callback=default_key_file,
     help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
 def login_to_coordinator(cluster_name, **kwargs):
     coordinator_public_hostname = get_coordinator_public_hostname(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
@@ -1443,11 +1451,6 @@ def login_to_coordinator(cluster_name, **kwargs):
     ssh_arg_str = ' '.join(ssh_args)
     sys.exit(subprocess.call(ssh_arg_str, shell=True))
 
-    if kwargs['perfenforce']:
-        click.echo("""
-PerfEnforce web interface:
-http://{coordinator_public_hostname}:{myria_web_port}/perfenforce""".format(coordinator_public_hostname=coordinator_public_hostname,
-    myria_web_port=ANSIBLE_GLOBAL_VARS['myria_web_port']))
 
 @run.command('logs')
 @click.argument('cluster_name')
