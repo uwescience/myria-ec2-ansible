@@ -26,6 +26,10 @@ from boto.exception import EC2ResponseError
 from boto.ec2.blockdevicemapping import BlockDeviceType, EBSBlockDeviceType, BlockDeviceMapping
 from boto.ec2.networkinterface import NetworkInterfaceSpecification, NetworkInterfaceCollection
 
+# disable boto logging to console
+import logging
+logging.getLogger('boto').propagate = False
+
 from myria.cluster.playbooks import playbooks_dir
 
 from distutils.spawn import find_executable
