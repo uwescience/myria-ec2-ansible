@@ -66,7 +66,8 @@
                                                     --worker-cores-number {{worker_vcores}} \
                                                     --worker-databases {% for i in range((WORKERS_PER_NODE|int) * (groups['workers']|length)) %} myria_{{i+1}} {% endfor %} \
                                                     --persist-uri {{persist_uri}} \
-                                                    {{ELASTIC_MODE | ternary('--elastic-mode', '')}}
+                                                    {{ELASTIC_MODE | ternary('--elastic-mode', '')}} \
+                                                    --num-partitions {{(WORKERS_PER_NODE|int) * ((CLUSTER_SIZE|int)-1)}}
           > ${TEMPFILE} && mv ${TEMPFILE} {{myria_path}}/myriadeploy/deployment.cfg"
   args:
     chdir: "{{myria_path}}/myriadeploy"
