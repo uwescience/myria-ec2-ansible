@@ -1202,7 +1202,7 @@ def run():
 @click.argument('cluster_name')
 @click.option('--perfenforce', cls=CustomOption, is_flag=True, callback=validate_perfenforce,
     help="Enable PerfEnforce (will override default cluster configuration)")
-@click.option('--unprovisioned', cls=CustomOption, is_flag=True,# callback=validate_unprovisioned,
+@click.option('--unprovisioned', cls=CustomOption, is_flag=True,
     help="Install required software at deployment")
 @click.option('--profile', cls=CustomOption, default=None,
     help="AWS credential profile used to launch your cluster")
@@ -2003,16 +2003,8 @@ def wait_until_image_available(ami_id, region, profile=None, verbosity=0):
     help="Automatically deregister any existing AMI with the same name as new AMI")
 @click.option('--force-terminate', is_flag=True,
     help="Automatically terminate any AMI builder instance with the same name as new AMI")
-@click.option('--hvm', 'virt_type', flag_value='hvm', callback=validate_virt_type,
-    help="Hardware Virtual Machine virtualization type (for current-generation EC2 instance types)")
-@click.option('--pv', 'virt_type', flag_value='pv', callback=validate_virt_type,
-    help="Paravirtual virtualization type (for previous-generation EC2 instance types)")
 @click.option('--profile', default=None,
     help="Boto profile used to launch AMI builder instance")
-@click.option('--key-pair', show_default=True, default=DEFAULTS['key_pair'],
-    help="EC2 key pair used to launch AMI builder instance")
-@click.option('--private-key-file', callback=default_key_file_from_key_pair,
-    help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
 @click.option('--instance-type', show_default=True, default=DEFAULTS['instance_type'],
     help="EC2 instance type for AMI builder instance")
 @click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
@@ -2021,8 +2013,16 @@ def wait_until_image_available(ami_id, region, profile=None, verbosity=0):
     help="AWS availability zone to launch AMI builder instance in")
 @click.option('--subnet-id', default=None, callback=validate_subnet_id,
     help="ID of the VPC (Virtual Private Cloud) subnet used to launch AMI builder instance")
+@click.option('--key-pair', show_default=True, default=DEFAULTS['key_pair'],
+    help="EC2 key pair used to launch AMI builder instance")
+@click.option('--private-key-file', callback=default_key_file_from_key_pair,
+    help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
 @click.option('--base-ami-id', callback=default_base_ami_id_from_region,
     help="ID of AMI (Amazon Machine Image) used to create new AMI [default: %s]" % DEFAULT_STOCK_HVM_AMI_IDS[DEFAULTS['region']])
+@click.option('--hvm', 'virt_type', flag_value='hvm', callback=validate_virt_type,
+    help="Hardware Virtual Machine virtualization type (for current-generation EC2 instance types)")
+@click.option('--pv', 'virt_type', flag_value='pv', callback=validate_virt_type,
+    help="Paravirtual virtualization type (for previous-generation EC2 instance types)")
 @click.option('--description', default=None,
     help="Description of new AMI (\"Name\" in AWS console)")
 @click.option('--copy-to-region', default=None, multiple=True, callback=validate_regions,
