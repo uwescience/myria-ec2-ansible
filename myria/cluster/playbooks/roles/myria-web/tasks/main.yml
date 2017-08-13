@@ -23,12 +23,19 @@
     - provision
     - update
 
-- name: Change raco branch
-  shell: "git fetch --all && git reset --hard origin/{{raco_branch}}"
-  args:
-    chdir: "{{myria_web_path}}/submodules/raco"
+- name: Update RACO repository
+  git: repo="{{raco_repository_url}}" dest="{{myria_web_path}}/submodules/raco" version="{{raco_branch}}" clone=no update=yes force=yes
   become: yes
   become_user: "{{myria_user}}"
+  register: raco_repo
+  tags:
+    - provision
+    - update
+
+- name: Check if raco is already installed
+  shell: "python -c 'import raco'"
+  register: raco_installed
+  ignore_errors: True
   tags:
     - provision
     - update
@@ -37,7 +44,7 @@
   shell: "python setup.py install"
   args:
     chdir: "{{myria_web_path}}/submodules/raco"
-    creates: "{{myria_web_path}}/submodules/raco/build"
+  when: raco_installed|failed or raco_repo.changed
   tags:
     - provision
     - update
