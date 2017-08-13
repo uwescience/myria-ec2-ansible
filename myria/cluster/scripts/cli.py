@@ -135,32 +135,32 @@ DEFAULT_STOCK_PV_AMI_IDS = {
 assert set(DEFAULT_STOCK_PV_AMI_IDS.keys()).issubset(set(ALL_REGIONS))
 
 DEFAULT_PROVISIONED_HVM_AMI_IDS = {
-    'us-west-2': "ami-f5973b95",
-    'us-east-1': "ami-9be9de8c",
-    'us-west-1': "ami-4e0d592e",
-    'eu-west-1': "ami-26f0a255",
-    'eu-central-1': "ami-c179bcae",
-    'ap-northeast-1': "ami-da19acbb",
-    'ap-northeast-2': "ami-f6a47398",
-    'ap-southeast-1': "ami-0bbb1968",
-    'ap-southeast-2': "ami-161f2175",
-    'ap-south-1': "ami-0d364162",
-    'sa-east-1': "ami-8cf56be0",
+    'ap-south-1': "ami-95b2c8fa",
+    'us-east-1': "ami-12536469",
+    'ap-northeast-1': "ami-235aae45",
+    'ap-southeast-2': "ami-bd0018de",
+    'sa-east-1': "ami-8e0d7ce2",
+    'ap-southeast-1': "ami-86e278e5",
+    'ap-northeast-2': "ami-dd6eb7b3",
+    'us-west-2': "ami-5f43a027",
+    'us-west-1': "ami-db6f45bb",
+    'eu-central-1': "ami-8a9039e5",
+    'eu-west-1': "ami-3d9f6c44",
 }
 assert set(DEFAULT_PROVISIONED_HVM_AMI_IDS.keys()).issubset(set(ALL_REGIONS))
 
 DEFAULT_PROVISIONED_PV_AMI_IDS = {
-    'us-west-2': "ami-19872b79",
-    'us-east-1': "ami-33241324",
-    'us-west-1': "ami-2c1b4f4c",
-    'eu-west-1': "ami-f6c19385",
-    'eu-central-1': "ami-667db809",
-    'ap-northeast-1': "ami-cb45f0aa",
-    'ap-northeast-2': "ami-f9a77097",
-    'ap-southeast-1': "ami-16ac0e75",
-    'ap-southeast-2': "ami-822a14e1",
-    'ap-south-1': "ami-4a364125",
-    'sa-east-1': "ami-1ef66872",
+    'ap-south-1': "ami-dabac0b5",
+    'us-east-1': "ami-53fcc828",
+    'ap-northeast-1': "ami-5b06f23d",
+    'ap-southeast-2': "ami-f81c049b",
+    'sa-east-1': "ami-3b077657",
+    'ap-southeast-1': "ami-c5d943a6",
+    'ap-northeast-2': "ami-436db42d",
+    'us-west-2': "ami-1212f16a",
+    'us-west-1': "ami-2591ba45",
+    'eu-central-1': "ami-cc9831a3",
+    'eu-west-1': "ami-89bd4ef0",
 }
 assert set(DEFAULT_PROVISIONED_PV_AMI_IDS.keys()).issubset(set(ALL_REGIONS))
 
