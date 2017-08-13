@@ -26,7 +26,7 @@
 
 - name: Copy sample notebooks to notebook directory
   get_url: url='{{ item.url }}' dest='{{ jupyter_notebooks_dir }}/{{ item.filename }}' mode=0775 validate_certs=no timeout=300
-  with_items: jupyter_sample_notebooks
+  with_items: "{{ jupyter_sample_notebooks }}"
   tags:
     - provision
 
