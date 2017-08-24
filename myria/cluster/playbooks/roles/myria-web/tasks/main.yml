@@ -26,7 +26,7 @@
 - name: Get old RACO commit
   command: "git rev-parse HEAD"
   args:
-    chdir: "{{myria_web_path}}/submodules/raco"
+    chdir: "{{raco_repository_path}}"
   register: old_raco_commit
   tags:
     - provision
@@ -35,7 +35,7 @@
 - name: Update RACO repository
   shell: "git fetch origin && git checkout {{raco_branch}} && git pull --rebase"
   args:
-    chdir: "{{myria_web_path}}/submodules/raco"
+    chdir: "{{raco_repository_path}}"
   become: yes
   become_user: "{{myria_user}}"
   tags:
@@ -45,7 +45,7 @@
 - name: Get new RACO commit
   command: "git rev-parse HEAD"
   args:
-    chdir: "{{myria_web_path}}/submodules/raco"
+    chdir: "{{raco_repository_path}}"
   register: new_raco_commit
   tags:
     - provision
@@ -62,7 +62,7 @@
 - name: Setup raco
   shell: "python setup.py install"
   args:
-    chdir: "{{myria_web_path}}/submodules/raco"
+    chdir: "{{raco_repository_path}}"
   when: raco_installed|failed or (old_raco_commit.stdout != new_raco_commit.stdout)
   tags:
     - provision
