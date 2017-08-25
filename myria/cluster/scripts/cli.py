@@ -289,7 +289,6 @@ class InstanceTypeConfig(object):
         assert self.coordinator_mem_gb <= self.node_mem_gb - self.driver_mem_gb, \
             "Coordinator memory (%f) exceeds available node memory (%f)" % (self.coordinator_mem_gb, self.node_mem_gb - self.driver_mem_gb)
 
-
     def update(self, **kwargs):
         args = self.args.copy()
         args.update(**kwargs)

@@ -106,12 +106,12 @@
 
   <property>
     <name>yarn.scheduler.maximum-allocation-mb</name>
-    <value>{{ [coordinator_mem_mb, worker_mem_mb] | max }}</value>
+    <value>{{ [COORDINATOR_MEM_MB | float, WORKER_MEM_MB | float] | max }}</value>
   </property>
 
   <property>
     <name>yarn.scheduler.maximum-allocation-vcores</name>
-    <value>{{ [coordinator_vcores, worker_vcores] | max }}</value>
+    <value>{{ [COORDINATOR_VCORES | int, WORKER_VCORES | int] | max }}</value>
   </property>
 
   <property>
