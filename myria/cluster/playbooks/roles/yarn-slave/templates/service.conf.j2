@@ -1,12 +1,7 @@
 description "yarn-slave"
 
-{% if public_ip_address in groups['coordinator'][0] %}
-start on started yarn-master
-stop on stopped yarn-master
-{%  else %}
 start on (local-filesystems and net-device-up IFACE!=lo)
 stop on [!2345]
-{%  endif %}
 
 setuid {{ hadoop_user }}
 

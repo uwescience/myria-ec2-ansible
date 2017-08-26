@@ -1,7 +1,7 @@
 description "yarn-master"
 
-start on (local-filesystems and net-device-up IFACE!=lo)
-stop on [!2345]
+start on started yarn-slave
+stop on stopped yarn-slave
 
 setuid {{ hadoop_user }}
 
