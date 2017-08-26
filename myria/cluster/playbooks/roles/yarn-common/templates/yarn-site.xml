@@ -106,7 +106,7 @@
 
   <property>
     <name>yarn.scheduler.maximum-allocation-mb</name>
-    <value>{{ [COORDINATOR_MEM_MB | float, WORKER_MEM_MB | float] | max }}</value>
+    <value>{{ [(1024 * (COORDINATOR_MEM_GB | float)) | int, (1024 * (WORKER_MEM_GB | float)) | int] | max }}</value>
   </property>
 
   <property>
