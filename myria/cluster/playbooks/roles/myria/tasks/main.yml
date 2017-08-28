@@ -40,7 +40,7 @@
 - name: Compile Myria
   become: yes
   become_user: "{{myria_user}}"
-  command: "./gradlew clean shadowJar"
+  command: "./gradlew --refresh-dependencies clean shadowJar"
   args:
     chdir: "{{myria_path}}"
   when: git.changed or (not (myria_jar_stat.stat.exists))
