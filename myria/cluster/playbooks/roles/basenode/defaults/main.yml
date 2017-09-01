@@ -1,7 +1,7 @@
 ---
 # This is the only directory where I have seen ephemeral disks mounted out-of-the-box on Ubuntu AMIs
 legacy_mount_point: /mnt
-jdk8_version: 8u131
+jdk8_version: 8u144
 # NB: this cached file must be manually updated when a new JDK update is released
 jdk8_url: http://s3-us-west-2.amazonaws.com/uwdb/myria/deploy-cache/oracle-jdk8-installer/jdk-{{jdk8_version}}-linux-x64.tar.gz
 jdk8_file: /var/cache/oracle-jdk8-installer/jdk-{{jdk8_version}}-linux-x64.tar.gz
