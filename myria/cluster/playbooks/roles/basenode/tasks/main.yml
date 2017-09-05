@@ -93,6 +93,21 @@
   tags:
     - provision
 
+- name: Create HDFS supergroup
+  group: name=supergroup state=present
+  tags:
+    - provision
+
+- name: Add Hadoop user to HDFS supergroup
+  user: name={{ hadoop_user }} groups=supergroup append=yes
+  tags:
+    - provision
+
+- name: Add Myria user to HDFS supergroup
+  user: name={{ myria_user }} groups=supergroup append=yes
+  tags:
+    - provision
+
 - name: Give remote user access to Myria files
   user: name={{ remote_user }} groups={{ myria_group }},{{ hadoop_group }} append=yes
   tags:
@@ -102,5 +117,3 @@
   shell: "chmod -x /etc/update-motd.d/*"
   tags:
     - provision
-    # TODO: remove `configure` tag after creating new AMIs
-    - configure
