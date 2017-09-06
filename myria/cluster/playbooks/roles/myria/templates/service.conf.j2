@@ -9,7 +9,6 @@ respawn
 respawn limit unlimited
 
 env SLEEP_TIME=30
-env JAVA_EXE="{{ java_home }}/bin/java"
 env YARN_EXE="{{ hadoop_home }}/bin/yarn"
 
 script
@@ -18,8 +17,7 @@ script
 {% if CLUSTER_LOG_LEVEL in ['DEBUG', 'TRACE', 'ALL'] %}
     export YARN_OPTS="$YARN_OPTS -Djava.util.logging.config.class=org.apache.reef.util.logging.Config"
 {% endif %}
-    # we avoid "yarn jar" so we can restrict the classpath to our uberjar
-    "$JAVA_EXE" -cp "{{myria_jar}}" edu.washington.escience.myria.daemon.MyriaDriverLauncher -runtimeClass org.apache.reef.runtime.yarn.client.YarnClientConfiguration -configPath "{{myria_path}}/myriadeploy" -javaLibPath "{{myria_path}}/build/libs" -nativeLibPath "{{myria_path}}/lib" -pythonLibPath "{{myria_path}}/python"
+    "$YARN_EXE" jar "{{myria_jar}}" edu.washington.escience.myria.daemon.MyriaDriverLauncher -runtimeClass org.apache.reef.runtime.yarn.client.YarnClientConfiguration -configPath "{{myria_path}}/myriadeploy" -javaLibPath "{{myria_path}}/build/libs" -nativeLibPath "{{myria_path}}/lib" -pythonLibPath "{{myria_path}}/python"
 end script
 
 post-stop script
