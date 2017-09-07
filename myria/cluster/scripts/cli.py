@@ -1480,12 +1480,12 @@ def print_logs(cluster_name, **kwargs):
     ssh_args = ssh_opts + [user_host]
     ssh_arg_str = ' '.join(ssh_args)
     cmdline = """
-{ssh_arg_str} <<EOF
+{ssh_arg_str} 2>/dev/null <<EOF
 while read APP_ID APP_NAME; do
     if [ "\$APP_NAME" = "MyriaDriver" ]; then
-        sudo -E -u {hadoop_user} {yarn_exe} logs -applicationId "\$APP_ID" -appOwner {myria_user}
+        sudo -E -u {hadoop_user} {yarn_exe} logs -applicationId "\$APP_ID" -appOwner {myria_user} 2>/dev/null
     fi
-done < <({yarn_exe} application -list -appStates FINISHED,FAILED,KILLED | awk 'FNR>=3 {{print \$1, \$2}}')
+done < <({yarn_exe} application -list -appStates FINISHED,FAILED,KILLED 2>/dev/null | awk 'FNR>=3 {{print \$1, \$2}}' | sort -rk 1,1 | head -1)
 EOF
 """.format(ssh_arg_str=ssh_arg_str, yarn_exe="%s/bin/yarn" % ANSIBLE_GLOBAL_VARS['hadoop_home'],
            hadoop_user=ANSIBLE_GLOBAL_VARS['hadoop_user'], myria_user=ANSIBLE_GLOBAL_VARS['myria_user'])
