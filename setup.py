@@ -8,14 +8,14 @@ except(IOError, ImportError):
 
 setup(
     name='myria-cluster',
-    version='0.1.42',
+    version='0.1.43',
     namespace_packages=['myria'],
     packages=find_packages(),
     include_package_data=True,
     zip_safe=False,
     author='Tobin Baker',
     author_email='tdbaker@cs.washington.edu',
-    url='https://github.com/uwescience/myria-ec2-ansible/tarball/0.1.42',
+    url='https://github.com/uwescience/myria-ec2-ansible/tarball/0.1.43',
     license='BSD',
     description='CLI to deploy the Myria parallel database on Amazon EC2',
     long_description=long_description,
