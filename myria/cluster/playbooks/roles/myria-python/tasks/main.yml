@@ -16,20 +16,6 @@
   tags:
     - provision
 
-- name: Create myria-python directory
-  file: path={{myria_python_path}} state=directory owner={{myria_user}} group={{myria_group}} mode=0775
-  tags:
-    - provision
-
-- name: Clone myria-python repository
-  git: repo="{{myria_python_repository_url}}" dest="{{myria_python_path}}" version="{{myria_python_branch}}" update=yes force=yes
-  become: yes
-  become_user: "{{myria_user}}"
-  register: git
-  tags:
-    - provision
-    - update
-
 - name: Install myria-python dependencies
   pip: name={{ item }}
   with_items:
@@ -39,11 +25,64 @@
   tags:
     - provision
 
-- name: Setup myria-python
+- name: Create RACO source directory
+  file: path={{raco_repository_path}} state=directory owner={{myria_user}} group={{myria_group}} mode=0775
+  tags:
+    - provision
+
+- name: Clone RACO repository
+  git: repo="{{raco_repository_url}}" dest="{{raco_repository_path}}" version="{{raco_branch}}" update=yes force=yes
+  become: yes
+  become_user: "{{myria_user}}"
+  register: raco_git
+  tags:
+    - provision
+    - update
+
+- name: Check if RACO is already installed
+  shell: "python -c 'import raco'"
+  register: raco_installed
+  ignore_errors: True
+  tags:
+    - provision
+    - update
+
+- name: Install RACO
+  shell: "python setup.py install"
+  args:
+    chdir: "{{raco_repository_path}}"
+  when: raco_git.changed or raco_installed|failed
+  tags:
+    - provision
+    - update
+
+- name: Create myria-python directory
+  file: path={{myria_python_path}} state=directory owner={{myria_user}} group={{myria_group}} mode=0775
+  tags:
+    - provision
+
+- name: Clone myria-python repository
+  git: repo="{{myria_python_repository_url}}" dest="{{myria_python_path}}" version="{{myria_python_branch}}" update=yes force=yes
+  become: yes
+  become_user: "{{myria_user}}"
+  register: myria_git
+  tags:
+    - provision
+    - update
+
+- name: Check if myria-python is already installed
+  shell: "python -c 'import myria'"
+  register: myria_installed
+  ignore_errors: True
+  tags:
+    - provision
+    - update
+
+- name: Install myria-python
   shell: "python setup.py install"
   args:
     chdir: "{{myria_python_path}}"
-  when: git.changed
+  when: myria_git.changed or myria_installed|failed
   tags:
     - provision
     - update

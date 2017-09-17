@@ -23,50 +23,13 @@
     - provision
     - update
 
-- name: Get old RACO commit
-  command: "git rev-parse HEAD"
-  args:
-    chdir: "{{raco_repository_path}}"
-  register: old_raco_commit
+- name: Overwrite symlinks to RACO and myria-python submodules with links to install source dirs
+  file: src="{{item.src}}" dest="{{item.dest}}" state=link owner={{myria_user}} group={{myria_group}} force=yes mode=0755
+  with_items:
+   - { src: '{{raco_repository_path}}/raco', dest: '{{myria_web_path}}/appengine/raco' }
+   - { src: '{{myria_python_path}}/myria', dest: '{{myria_web_path}}/appengine/myria' }
   tags:
     - provision
-    - update
-
-- name: Update RACO repository
-  shell: "git fetch origin && git checkout {{raco_branch}} && git pull --rebase"
-  args:
-    chdir: "{{raco_repository_path}}"
-  become: yes
-  become_user: "{{myria_user}}"
-  tags:
-    - provision
-    - update
-
-- name: Get new RACO commit
-  command: "git rev-parse HEAD"
-  args:
-    chdir: "{{raco_repository_path}}"
-  register: new_raco_commit
-  tags:
-    - provision
-    - update
-
-- name: Check if raco is already installed
-  shell: "python -c 'import raco'"
-  register: raco_installed
-  ignore_errors: True
-  tags:
-    - provision
-    - update
-
-- name: Setup raco
-  shell: "python setup.py install"
-  args:
-    chdir: "{{raco_repository_path}}"
-  when: raco_installed|failed or (old_raco_commit.stdout != new_raco_commit.stdout)
-  tags:
-    - provision
-    - update
 
 - name: Install myria-web service
   template: src=service.conf.j2 dest=/etc/init/myria-web.conf backup=yes mode=0644

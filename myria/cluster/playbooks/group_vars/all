@@ -56,6 +56,8 @@ myria_group: myria
 myria_version: 0.1
 myria_rest_port: 8753
 myria_web_port: 8080
+raco_repository_path: '{{install_base_path}}/raco'
+myria_python_path: '{{install_base_path}}/myria-python'
 
 
 #----------------------------------

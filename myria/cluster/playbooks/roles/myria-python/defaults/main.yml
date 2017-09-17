@@ -1,5 +1,6 @@
 ---
 #default vairables use for setting up myria-python
 myria_python_repository_url: 'https://github.com/uwescience/myria-python.git'
-myria_python_path: '{{install_base_path}}/myria-python'
 myria_python_branch: master
+raco_repository_url: 'https://github.com/uwescience/raco.git'
+raco_branch: master
