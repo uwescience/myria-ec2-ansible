@@ -1446,15 +1446,28 @@ def default_key_file(ctx, param, value):
     help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
 @click.option('--private-key-file', callback=default_key_file,
     help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
-def login_to_coordinator(cluster_name, **kwargs):
-    coordinator_public_hostname = get_coordinator_public_hostname(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
-    if not coordinator_public_hostname:
-        raise ValueError("Couldn't resolve coordinator public DNS for cluster '%s' in region '%s'" % (cluster_name, kwargs['region']))
-    user_host = "'%s@%s'" % (ANSIBLE_GLOBAL_VARS['remote_user'], coordinator_public_hostname)
+@click.option('--node-id', type=int, default=0,
+    help="Node ID of the cluster node you want to log into (coordinator by default)")
+def login_to_node(cluster_name, **kwargs):
+    group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+    if not group:
+        click.secho("No cluster with name '%s' exists in region '%s'." % (cluster_name, kwargs['region']), fg='red')
+        sys.exit(1)
+    public_hostname = None
+    for instance in group.instances():
+        if int(instance.tags.get('node-id')) == kwargs['node_id']:
+            public_hostname = instance.public_dns_name
+            break
+    if not public_hostname:
+        click.secho("No node found in cluster '%s', region '%s' with node ID %d." % (cluster_name, kwargs['region'], kwargs['node_id']), fg='red')
+        sys.exit(1)
+    user_host = "'%s@%s'" % (ANSIBLE_GLOBAL_VARS['remote_user'], public_hostname)
     ssh_opts = ["ssh", "-i", kwargs['private_key_file'], "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"]
     if kwargs['verbose']:
         ssh_opts.append("-vvv")
     ssh_args = ssh_opts + [user_host]
+    if not kwargs['verbose']:
+        ssh_args.append("2>/dev/null")
     ssh_arg_str = ' '.join(ssh_args)
     sys.exit(subprocess.call(ssh_arg_str, shell=True))
 
