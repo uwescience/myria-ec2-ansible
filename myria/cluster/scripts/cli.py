@@ -1515,6 +1515,8 @@ EOF
     help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
 @click.option('--command',
     help="Shell command to execute on all hosts in the cluster")
+@click.option('--node-id', type=int, default=None,
+    help="Node ID of the cluster node you want to execute the command on (all nodes by default)")
 def exec_command(cluster_name, **kwargs):
     def exec_command_on_host(host, cmd):
         user_host = "'%s@%s'" % (ANSIBLE_GLOBAL_VARS['remote_user'], host)
@@ -1522,7 +1524,7 @@ def exec_command(cluster_name, **kwargs):
         ssh_args = ssh_opts + [user_host]
         ssh_arg_str = ' '.join(ssh_args)
         cmdline = """
-{ssh_arg_str} <<EOF
+{ssh_arg_str} 2>/dev/null <<EOF
 {cmd}
 EOF
 """.format(ssh_arg_str=ssh_arg_str, cmd=cmd)
@@ -1532,7 +1534,19 @@ EOF
     if not group:
         click.secho("No cluster with name '%s' exists in region '%s'." % (cluster_name, kwargs['region']), fg='red')
         sys.exit(1)
-    public_ips = [instance.ip_address for instance in group.instances()]
+    if kwargs['node_id'] is not None:
+        public_ip = None
+        for instance in group.instances():
+            if int(instance.tags.get('node-id')) == kwargs['node_id']:
+                public_ip = instance.ip_address
+                break
+        if not public_ip:
+            click.secho("No node found in cluster '%s', region '%s' with node ID %d." % (cluster_name, kwargs['region'], kwargs['node_id']), fg='red')
+            sys.exit(1)
+        public_ips = [public_ip]
+    else:
+        public_ips = [instance.ip_address for instance in group.instances()]
+
     for public_ip in public_ips:
         click.secho("Executing command on %s" % public_ip, fg='green')
         ret = exec_command_on_host(public_ip, kwargs['command'])
