@@ -1402,6 +1402,9 @@ http://{coordinator_public_hostname}:{myria_rest_port}
 Ganglia web interface:
 http://{coordinator_public_hostname}:{ganglia_web_port}
 
+YARN Resource Manager interface:
+http://{coordinator_public_hostname}:{resourcemanager_web_port}
+
 Jupyter notebook interface:
 http://{coordinator_public_hostname}:{jupyter_web_port}
 """ + (
@@ -1411,6 +1414,7 @@ http://{coordinator_public_hostname}:{myria_web_port}/perfenforce
 """ if (kwargs.get('perfenforce')) else "")
 ).format(coordinator_public_hostname=coordinator_public_hostname, myria_web_port=ANSIBLE_GLOBAL_VARS['myria_web_port'],
            myria_rest_port=ANSIBLE_GLOBAL_VARS['myria_rest_port'], ganglia_web_port=ANSIBLE_GLOBAL_VARS['ganglia_web_port'],
+           resourcemanager_web_port=ANSIBLE_GLOBAL_VARS['resourcemanager_web_port'],
            jupyter_web_port=ANSIBLE_GLOBAL_VARS['jupyter_web_port'], private_key_file=kwargs['private_key_file'],
            remote_user=ANSIBLE_GLOBAL_VARS['remote_user'], script_name=SCRIPT_NAME, cluster_name=cluster_name,
            new_cluster_size=kwargs['cluster_size']+1, region=kwargs['region'], options=options_str), fg='green')
