@@ -57,9 +57,6 @@ os.environ['ANSIBLE_NOCOWS'] = "True"
 USER = os.getenv('USER')
 HOME = os.getenv('HOME')
 
-# we need to fudge memory values a bit for floating-point comparison
-MEMORY_EPSILON = 0.1
-
 # valid log4j log levels (https://logging.apache.org/log4j/1.2/apidocs/org/apache/log4j/Level.html)
 LOG_LEVELS = ['OFF', 'FATAL', 'ERROR', 'WARN', 'DEBUG', 'TRACE', 'ALL']
 
@@ -254,16 +251,15 @@ class InstanceTypeConfig(object):
                  worker_mem_gb=None, coordinator_vcores=None,
                  coordinator_mem_gb=None):
         self.args = dict((k, v) for k, v in locals().iteritems() if k != 'self' and v is not None)
-        self.driver_mem_gb = driver_mem_gb
         self.node_vcores = node_vcores
-        self.node_mem_gb = node_mem_gb
+        self.node_mem_gb = round(node_mem_gb + 0.05, 1) # round up to nearest 100MB
         self.workers_per_node = workers_per_node
         self.worker_vcores = worker_vcores
-        self.worker_mem_gb = worker_mem_gb
         self.coordinator_vcores = coordinator_vcores
         self.coordinator_mem_gb = coordinator_mem_gb
         if driver_mem_gb is None:
-            self.driver_mem_gb = DEFAULTS['driver_mem_gb']
+            driver_mem_gb = DEFAULTS['driver_mem_gb']
+        self.driver_mem_gb = round(driver_mem_gb - 0.05, 1) # round down to nearest 100MB
         if workers_per_node is None:
             self.workers_per_node = self.node_vcores - 1
         elif workers_per_node > self.node_vcores - 1:
@@ -271,12 +267,14 @@ class InstanceTypeConfig(object):
         if worker_vcores is None:
             self.worker_vcores = (self.node_vcores - 1) / self.workers_per_node
         if worker_mem_gb is None:
-            self.worker_mem_gb = (
-                self.node_mem_gb - self.driver_mem_gb - MEMORY_EPSILON) / self.workers_per_node
+            worker_mem_gb = (
+                self.node_mem_gb - self.driver_mem_gb) / self.workers_per_node
+        self.worker_mem_gb = round(worker_mem_gb - 0.05, 1) # round down to nearest 100MB
         if coordinator_vcores is None:
             self.coordinator_vcores = self.node_vcores - 1
         if coordinator_mem_gb is None:
-            self.coordinator_mem_gb = self.node_mem_gb - self.driver_mem_gb - MEMORY_EPSILON
+            coordinator_mem_gb = self.node_mem_gb - self.driver_mem_gb
+        self.coordinator_mem_gb = round(coordinator_mem_gb - 0.05, 1) # round down to nearest 100MB
         # need at least 1 vcore available for randomly assigned driver
         assert self.worker_vcores * self.workers_per_node <= self.node_vcores - 1, \
             "Total worker vcores (%d) exceeds available node vcores (%d)" % (self.worker_vcores * self.workers_per_node, self.node_vcores - 1)

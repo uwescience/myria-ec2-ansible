@@ -101,7 +101,7 @@
 
   <property>
     <name>yarn.scheduler.minimum-allocation-mb</name>
-    <value>{{ driver_mem_mb }}</value>
+    <value>{{ mem_alloc_increment_mb }}</value>
   </property>
 
   <property>

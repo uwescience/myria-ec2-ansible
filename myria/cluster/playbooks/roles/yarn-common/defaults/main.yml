@@ -10,6 +10,8 @@ hdfs_datanode_data_dir: "{{default_data_dir}}/datanode"
 hdfs_replication_factor: 2
 node_mem_gb: "{{ NODE_MEM_GB | float }}"
 node_vcores: "{{ NODE_VCORES | int }}"
+# this needs to be in sync with the rounding logic in the CLI
+mem_alloc_increment_mb: 100
 node_mem_mb: "{{ (1024 * (NODE_MEM_GB | float)) | int }}"
 driver_mem_mb: "{{ (1024 * (DRIVER_MEM_GB | float)) | int }}"
 coordinator_mem_mb: "{{ (1024 * (COORDINATOR_MEM_GB | float)) | int }}"
