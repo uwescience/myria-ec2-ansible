@@ -12,6 +12,7 @@ from collections import namedtuple
 from copy import deepcopy
 from string import ascii_lowercase
 from operator import itemgetter, attrgetter
+from math import floor, ceil
 import click
 import yaml
 import json
@@ -245,6 +246,29 @@ EBS_OPTIMIZED_INSTANCE_TYPES = [
 ]
 
 
+MEM_ALLOC_INCREMENT_MB = int(ANSIBLE_GLOBAL_VARS['mem_alloc_increment_mb'])
+
+
+def round_gb_to_lower_increment(mem_alloc_gb):
+    mem_alloc_mb = int(mem_alloc_gb * 1024)
+    quotient = mem_alloc_mb // MEM_ALLOC_INCREMENT_MB
+    rounded_mem_alloc_mb = MEM_ALLOC_INCREMENT_MB * quotient
+    # round down to 2 decimal places
+    rounded_mem_alloc_gb = float(rounded_mem_alloc_mb) / 1024
+    return floor(rounded_mem_alloc_gb * 100) / 100.0
+
+
+def round_gb_to_higher_increment(mem_alloc_gb):
+    mem_alloc_mb = int(mem_alloc_gb * 1024)
+    rounded_mem_alloc_mb = mem_alloc_mb
+    remainder = mem_alloc_mb % MEM_ALLOC_INCREMENT_MB
+    if remainder > 0:
+        rounded_mem_alloc_mb = mem_alloc_mb + MEM_ALLOC_INCREMENT_MB - remainder
+    # round up to 2 decimal places
+    rounded_mem_alloc_gb = float(rounded_mem_alloc_mb) / 1024
+    return ceil(rounded_mem_alloc_gb * 100) / 100.0
+
+
 class InstanceTypeConfig(object):
     def __init__(self, node_vcores, node_mem_gb, driver_mem_gb=None,
                  workers_per_node=None, worker_vcores=None,
@@ -252,14 +276,14 @@ class InstanceTypeConfig(object):
                  coordinator_mem_gb=None):
         self.args = dict((k, v) for k, v in locals().iteritems() if k != 'self' and v is not None)
         self.node_vcores = node_vcores
-        self.node_mem_gb = round(node_mem_gb + 0.05, 1) # round up to nearest 100MB
+        self.node_mem_gb = round_gb_to_higher_increment(node_mem_gb)
         self.workers_per_node = workers_per_node
         self.worker_vcores = worker_vcores
         self.coordinator_vcores = coordinator_vcores
         self.coordinator_mem_gb = coordinator_mem_gb
         if driver_mem_gb is None:
             driver_mem_gb = DEFAULTS['driver_mem_gb']
-        self.driver_mem_gb = round(driver_mem_gb - 0.05, 1) # round down to nearest 100MB
+        self.driver_mem_gb = round_gb_to_lower_increment(driver_mem_gb)
         if workers_per_node is None:
             self.workers_per_node = self.node_vcores - 1
         elif workers_per_node > self.node_vcores - 1:
@@ -269,12 +293,12 @@ class InstanceTypeConfig(object):
         if worker_mem_gb is None:
             worker_mem_gb = (
                 self.node_mem_gb - self.driver_mem_gb) / self.workers_per_node
-        self.worker_mem_gb = round(worker_mem_gb - 0.05, 1) # round down to nearest 100MB
+        self.worker_mem_gb = round_gb_to_lower_increment(worker_mem_gb)
         if coordinator_vcores is None:
             self.coordinator_vcores = self.node_vcores - 1
         if coordinator_mem_gb is None:
             coordinator_mem_gb = self.node_mem_gb - self.driver_mem_gb
-        self.coordinator_mem_gb = round(coordinator_mem_gb - 0.05, 1) # round down to nearest 100MB
+        self.coordinator_mem_gb = round_gb_to_lower_increment(coordinator_mem_gb)
         # need at least 1 vcore available for randomly assigned driver
         assert self.worker_vcores * self.workers_per_node <= self.node_vcores - 1, \
             "Total worker vcores (%d) exceeds available node vcores (%d)" % (self.worker_vcores * self.workers_per_node, self.node_vcores - 1)
@@ -983,9 +1007,10 @@ def validate_data_volume_count(ctx, param, value):
 
 
 def validate_driver_mem(ctx, param, value):
-    # HACK: callback shouldn't know about default
-    real_val = value or DEFAULTS['driver_mem_gb']
-    ctx.params['__instance_type_config'] = ctx.params['__instance_type_config'].update(driver_mem_gb=real_val)
+    # FIXME: callback shouldn't know about default
+    value = value or DEFAULTS['driver_mem_gb']
+    ctx.params['__instance_type_config'] = ctx.params['__instance_type_config'].update(driver_mem_gb=value)
+    value = ctx.params['__instance_type_config'].driver_mem_gb
     return value
 
 
@@ -993,10 +1018,9 @@ def validate_node_vcores(ctx, param, value):
     if value is None:
         if ctx.params['instance_type'] not in INSTANCE_TYPE_DEFAULTS:
             raise click.BadParameter("Instance type '%s' has no default for --node-vcores. You must supply a value." % ctx.params['instance_type'])
-        else:
-            value = ctx.params['__instance_type_config'].node_vcores
     else:
         ctx.params['__instance_type_config'] = ctx.params['__instance_type_config'].update(node_vcores=value)
+    value = ctx.params['__instance_type_config'].node_vcores
     return value
 
 
@@ -1004,10 +1028,9 @@ def validate_node_mem(ctx, param, value):
     if value is None:
         if ctx.params['instance_type'] not in INSTANCE_TYPE_DEFAULTS:
             raise click.BadParameter("Instance type '%s' has no default for --node-mem-gb. You must supply a value." % ctx.params['instance_type'])
-        else:
-            value = ctx.params['__instance_type_config'].node_mem_gb
     else:
         ctx.params['__instance_type_config'] = ctx.params['__instance_type_config'].update(node_mem_gb=value)
+    value = ctx.params['__instance_type_config'].node_mem_gb
     return value
 
 
@@ -1015,10 +1038,9 @@ def validate_workers_per_node(ctx, param, value):
     if value is None:
         if ctx.params['instance_type'] not in INSTANCE_TYPE_DEFAULTS:
             raise click.BadParameter("Instance type '%s' has no default for --workers-per-node. You must supply a value." % ctx.params['instance_type'])
-        else:
-            value = ctx.params['__instance_type_config'].workers_per_node
     else:
         ctx.params['__instance_type_config'] = ctx.params['__instance_type_config'].update(workers_per_node=value)
+    value = ctx.params['__instance_type_config'].workers_per_node
     return value
 
 
@@ -1026,10 +1048,9 @@ def validate_worker_vcores(ctx, param, value):
     if value is None:
         if ctx.params['instance_type'] not in INSTANCE_TYPE_DEFAULTS:
             raise click.BadParameter("Instance type '%s' has no default for --worker-vcores. You must supply a value." % ctx.params['instance_type'])
-        else:
-            value = ctx.params['__instance_type_config'].worker_vcores
     else:
         ctx.params['__instance_type_config'] = ctx.params['__instance_type_config'].update(worker_vcores=value)
+    value = ctx.params['__instance_type_config'].worker_vcores
     return value
 
 
@@ -1037,10 +1058,9 @@ def validate_worker_mem(ctx, param, value):
     if value is None:
         if ctx.params['instance_type'] not in INSTANCE_TYPE_DEFAULTS:
             raise click.BadParameter("Instance type '%s' has no default for --worker-mem-gb. You must supply a value." % ctx.params['instance_type'])
-        else:
-            value = ctx.params['__instance_type_config'].worker_mem_gb
     else:
         ctx.params['__instance_type_config'] = ctx.params['__instance_type_config'].update(worker_mem_gb=value)
+    value = ctx.params['__instance_type_config'].worker_mem_gb
     return value
 
 
@@ -1048,10 +1068,9 @@ def validate_coordinator_vcores(ctx, param, value):
     if value is None:
         if ctx.params['instance_type'] not in INSTANCE_TYPE_DEFAULTS:
             raise click.BadParameter("Instance type '%s' has no default for --coordinator-vcores. You must supply a value." % ctx.params['instance_type'])
-        else:
-            value = ctx.params['__instance_type_config'].coordinator_vcores
     else:
         ctx.params['__instance_type_config'] = ctx.params['__instance_type_config'].update(coordinator_vcores=value)
+    value = ctx.params['__instance_type_config'].coordinator_vcores
     return value
 
 
@@ -1059,10 +1078,9 @@ def validate_coordinator_mem(ctx, param, value):
     if value is None:
         if ctx.params['instance_type'] not in INSTANCE_TYPE_DEFAULTS:
             raise click.BadParameter("Instance type '%s' has no default for --coordinator-mem-gb. You must supply a value." % ctx.params['instance_type'])
-        else:
-            value = ctx.params['__instance_type_config'].coordinator_mem_gb
     else:
         ctx.params['__instance_type_config'] = ctx.params['__instance_type_config'].update(coordinator_mem_gb=value)
+    value = ctx.params['__instance_type_config'].coordinator_mem_gb
     return value
 
 

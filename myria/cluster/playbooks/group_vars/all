@@ -40,6 +40,7 @@ container_executor: org.apache.hadoop.yarn.server.nodemanager.LinuxContainerExec
 cgroups_mount_enable: true
 cgroups_mount_dir: /sys/fs/cgroup
 
+mem_alloc_increment_mb: 100
 driver_mem_gb: "{{ DRIVER_MEM_GB | float }}"
 coordinator_mem_gb: "{{ COORDINATOR_MEM_GB | float }}"
 coordinator_vcores: "{{ COORDINATOR_VCORES | int }}"
