@@ -33,6 +33,7 @@ setup(
         'boto >= 2.40.0',
         'PyYAML >= 3.11',
         'requests >= 2.10.0',
+        'python-dateutil >= 2.6.0',
     ],
     entry_points={
         'console_scripts': [

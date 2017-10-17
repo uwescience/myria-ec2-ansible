@@ -6,13 +6,14 @@ import os.path
 import stat
 import traceback
 import subprocess
-from time import sleep
+from time import sleep, strftime
 from tempfile import mkdtemp
 from collections import namedtuple
 from copy import deepcopy
 from string import ascii_lowercase
 from operator import itemgetter, attrgetter
 from math import floor, ceil
+from dateutil.parser import parse as dateparse
 import click
 import yaml
 import json
@@ -35,6 +36,7 @@ from myria.cluster.playbooks import playbooks_dir
 from distutils.spawn import find_executable
 from distutils.util import strtobool
 import pkg_resources
+
 VERSION = pkg_resources.get_distribution("myria-cluster").version
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
@@ -2239,6 +2241,7 @@ def delete_image(ami_name, **kwargs):
 
 
 @run.command('list-images')
+@click.option('--verbose', is_flag=True)
 @click.option('--profile', default=None,
     help="Boto profile used to create AMI")
 @click.option('--region', multiple=True, callback=validate_regions,
@@ -2246,6 +2249,7 @@ def delete_image(ami_name, **kwargs):
 @click.option('--vpc-id', default=None, callback=validate_vpc_ids,
     help="ID of the VPC (Virtual Private Cloud) in which AMI was created (can be specified multiple times, in same order as regions)")
 def list_images(**kwargs):
+    verbosity = 3 if kwargs['verbose'] else 1
     try:
         all_region_images = []
         regions = kwargs['region']
@@ -2264,11 +2268,12 @@ def list_images(**kwargs):
                 images = [img for img in images_in_vpc if img.id in all_image_ids]
             all_region_images.extend(images)
 
-        format_str = "{: <20} {: <20} {: <20} {: <30} {: <100}"
-        print(format_str.format('REGION', 'AMI_ID', 'VIRTUALIZATION_TYPE', 'NAME', 'DESCRIPTION'))
-        print(format_str.format('------', '------', '-------------------', '----', '-----------'))
+        format_str = "{: <15} {: <12} {: <19} {: <30} {: <13} {: <80}"
+        print(format_str.format('REGION', 'AMI_ID', 'VIRTUALIZATION_TYPE', 'NAME', 'CREATION_DATE', 'DESCRIPTION'))
+        print(format_str.format('------', '------', '-------------------', '----', '-------------', '-----------'))
         for image in all_region_images:
-            print(format_str.format(image.region.name, image.id, image.virtualization_type, image.name, image.description))
+            creation_date = dateparse(image.creationDate).strftime("%Y/%m/%d")
+            print(format_str.format(image.region.name, image.id, image.virtualization_type, image.name, creation_date, image.description))
     except (KeyboardInterrupt, Exception) as e:
         if verbosity > 0:
             click.secho(str(e), fg='red')
