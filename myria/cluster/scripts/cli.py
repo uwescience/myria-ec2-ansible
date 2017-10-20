@@ -91,26 +91,32 @@ PERFENFORCE_DEFAULTS = dict(
 
 # see http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions
 ALL_REGIONS = [
-    'us-west-2',
-    'us-east-1',
-    'us-west-1',
-    'eu-west-1',
-    'eu-central-1',
-    'ap-northeast-1',
-    'ap-northeast-2',
-    'ap-southeast-1',
-    'ap-southeast-2',
-    'ap-south-1',
-    'sa-east-1'
+    'us-east-1',        # US East (N. Virginia)
+    'us-east-2',        # US East (Ohio)
+    'us-west-1',        # US West (N. California)
+    'us-west-2',        # US West (Oregon)
+    'ca-central-1',     # Canada (Central)
+    'eu-west-1',        # EU (Ireland)
+    'eu-central-1',     # EU (Frankfurt)
+    'eu-west-2',        # EU (London)
+    'ap-northeast-1',   # Asia Pacific (Tokyo)
+    'ap-northeast-2',   # Asia Pacific (Seoul)
+    'ap-southeast-1',   # Asia Pacific (Singapore)
+    'ap-southeast-2',   # Asia Pacific (Sydney)
+    'ap-south-1',       # Asia Pacific (Mumbai)
+    'sa-east-1',        # South America (São Paulo)
 ]
 
 # these mappings are taken from http://uec-images.ubuntu.com/query/trusty/server/released.txt
 DEFAULT_STOCK_HVM_AMI_IDS = {
-    'us-west-2': "ami-9abea4fb",
     'us-east-1': "ami-fce3c696",
+    'us-east-2': "ami-0becb76e",
     'us-west-1': "ami-06116566",
+    'us-west-2': "ami-9abea4fb",
+    'ca-central-1': "ami-2e51e34a",
     'eu-west-1': "ami-f95ef58a",
     'eu-central-1': "ami-87564feb",
+    'eu-west-2': "ami-c7c7cda3",
     'ap-northeast-1': "ami-a21529cc",
     'ap-northeast-2': "ami-09dc1267",
     'ap-southeast-1': "ami-25c00c46",
@@ -121,9 +127,9 @@ DEFAULT_STOCK_HVM_AMI_IDS = {
 assert set(DEFAULT_STOCK_HVM_AMI_IDS.keys()).issubset(set(ALL_REGIONS))
 
 DEFAULT_STOCK_PV_AMI_IDS = {
-    'us-west-2': "ami-9dbea4fc",
     'us-east-1': "ami-b2e3c6d8",
     'us-west-1': "ami-42116522",
+    'us-west-2': "ami-9dbea4fc",
     'eu-west-1': "ami-be5cf7cd",
     'eu-central-1': "ami-d0574ebc",
     'ap-northeast-1': "ami-d91428b7",
@@ -135,32 +141,35 @@ DEFAULT_STOCK_PV_AMI_IDS = {
 assert set(DEFAULT_STOCK_PV_AMI_IDS.keys()).issubset(set(ALL_REGIONS))
 
 DEFAULT_PROVISIONED_HVM_AMI_IDS = {
-    'ap-south-1': "ami-7239781d",
     'us-east-1': "ami-0a0bfa70",
-    'ap-northeast-1': "ami-cdae7bab",
-    'ap-southeast-2': "ami-b71bfad5",
-    'sa-east-1': "ami-a6433fca",
-    'ap-southeast-1': "ami-f2becd91",
-    'ap-northeast-2': "ami-46a47e28",
-    'us-west-2': "ami-8db841f5",
+    'us-east-2': "ami-06fdd163",
     'us-west-1': "ami-4c81b02c",
-    'eu-central-1': "ami-8d2a9ae2",
+    'us-west-2': "ami-8db841f5",
+    'ca-central-1': "ami-2bac144f",
     'eu-west-1': "ami-021ed67b",
+    'eu-central-1': "ami-8d2a9ae2",
+    'eu-west-2': "ami-be312cda",
+    'ap-northeast-1': "ami-cdae7bab",
+    'ap-northeast-2': "ami-46a47e28",
+    'ap-southeast-1': "ami-f2becd91",
+    'ap-southeast-2': "ami-b71bfad5",
+    'ap-south-1': "ami-7239781d",
+    'sa-east-1': "ami-a6433fca",
 }
 assert set(DEFAULT_PROVISIONED_HVM_AMI_IDS.keys()).issubset(set(ALL_REGIONS))
 
 DEFAULT_PROVISIONED_PV_AMI_IDS = {
-    'ap-south-1': "ami-bf3e7fd0",
     'us-east-1': "ami-78956502",
-    'ap-northeast-1': "ami-7fdc0919",
-    'ap-southeast-2': "ami-fc62839e",
-    'sa-east-1': "ami-bab6cad6",
-    'ap-southeast-1': "ami-4c92e12f",
-    'ap-northeast-2': "ami-8da67ce3",
-    'us-west-2': "ami-51a75e29",
     'us-west-1': "ami-5589b835",
-    'eu-central-1': "ami-391aaa56",
+    'us-west-2': "ami-51a75e29",
     'eu-west-1': "ami-d53cf4ac",
+    'eu-central-1': "ami-391aaa56",
+    'ap-northeast-1': "ami-7fdc0919",
+    'ap-northeast-2': "ami-8da67ce3",
+    'ap-southeast-1': "ami-4c92e12f",
+    'ap-southeast-2': "ami-fc62839e",
+    'ap-south-1': "ami-bf3e7fd0",
+    'sa-east-1': "ami-bab6cad6",
 }
 assert set(DEFAULT_PROVISIONED_PV_AMI_IDS.keys()).issubset(set(ALL_REGIONS))
 
