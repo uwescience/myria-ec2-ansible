@@ -2084,6 +2084,10 @@ def create_image(ami_name, **kwargs):
     iam_user = get_iam_user(kwargs['region'], profile=kwargs['profile'], verbosity=verbosity)
     if not validate_aws_settings(kwargs['region'], kwargs['profile'], vpc_id, verbosity=verbosity):
         sys.exit(1)
+    # Create EC2 key pair if absent
+    if not create_key_pair_and_private_key_file(kwargs['key_pair'], kwargs['private_key_file'], kwargs['region'],
+                                                profile=kwargs['profile'], verbosity=verbosity):
+        sys.exit(1)
     # abort or deregister if AMI with the same name already exists
     regions = kwargs['copy_to_region'] + (kwargs['region'],)
     for region in regions:
