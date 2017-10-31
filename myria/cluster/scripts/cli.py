@@ -441,6 +441,7 @@ CLUSTER_METADATA_KEYS = dict(
     workers_per_node=int,
     cluster_log_level=str,
     state=str,
+    iam_user=str,
 )
 
 
@@ -1852,13 +1853,14 @@ def list_cluster(cluster_name, **kwargs):
             # In the EC2 API, filters can only express OR,
             # so we have to implement AND by intersecting results for each filter.
             groups = [g for g in myria_groups if g.id in groups_in_vpc_ids]
-        format_str = "{: <20} {: <5} {: <50} {: <10}"
-        print(format_str.format('CLUSTER', 'NODES', 'COORDINATOR', 'STATE'))
-        print(format_str.format('-------', '-----', '-----------', '-----'))
+        format_str = "{: <20} {: <5} {: <50} {: <10} {: <20}"
+        print(format_str.format('CLUSTER', 'NODES', 'COORDINATOR', 'STATE', 'OWNER'))
+        print(format_str.format('-------', '-----', '-----------', '-----', '-----'))
         for group in groups:
             coordinator = get_coordinator_public_hostname(
                 group.name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
-            print(format_str.format(group.name, len(group.instances()), coordinator, group.tags.get('state', "unknown")))
+            print(format_str.format(group.name, len(group.instances()), coordinator,
+                  group.tags.get('state', "unknown"), group.tags.get('iam-user', "unknown")))
 
 
 def validate_resize_command(ctx, param, value):
