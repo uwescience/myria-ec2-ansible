@@ -2032,6 +2032,10 @@ def validate_regions(ctx, param, value):
     return value
 
 
+def validate_description(ctx, param, value):
+    return value or ctx.params.get('ami_name')
+
+
 def wait_until_image_available(ami_id, region, profile=None, verbosity=0):
     ec2 = boto.ec2.connect_to_region(region, profile_name=profile)
     image = ec2.get_image(ami_id)
@@ -2076,7 +2080,7 @@ def wait_until_image_available(ami_id, region, profile=None, verbosity=0):
     help="Hardware Virtual Machine virtualization type (for current-generation EC2 instance types)")
 @click.option('--pv', 'virt_type', flag_value='pv', callback=validate_virt_type,
     help="Paravirtual virtualization type (for previous-generation EC2 instance types)")
-@click.option('--description', default=None,
+@click.option('--description', default=None, callback=validate_description,
     help="Description of new AMI (\"Name\" in AWS console)")
 @click.option('--copy-to-region', default=None, multiple=True, callback=validate_regions,
     help="Region to copy new AMI (can be specified multiple times)")
