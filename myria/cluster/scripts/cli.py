@@ -570,21 +570,26 @@ def launch_cluster(cluster_name, app_name="myria", verbosity=0, **kwargs):
                         raise
                 else:
                     for req in reqs:
-                        if req.state != "active":
-                            break
-                        else:
+                        if req.state == "active":
                             launched_instance_ids.append(req.instance_id)
-                    else: # all requests fulfilled, so break out of while loop
+                    if len(launched_instance_ids) == len(reqs):
+                        # all requests fulfilled, so break out of while loop
                         break
                 if verbosity > 0:
-                    click.secho("Not all spot requests fulfilled, waiting 60 seconds...", fg='yellow')
+                    click.secho("Not all spot requests fulfilled (%d/%d), waiting 60 seconds..." % (
+                        len(launched_instance_ids), len(reqs)), fg='yellow')
                 sleep(60)
             launched_instances = ec2.get_only_instances(launched_instance_ids)
         except:
+            if verbosity > 0:
+                click.secho("Unexpected error, cancelling spot instance requests...", fg='red')
+            if verbosity > 1:
+                click.echo("Terminating spot requests %s" % ', '.join(spot_request_ids))
             try:
                 ec2.cancel_spot_instance_requests(spot_request_ids)
             except:
                 pass # best-effort
+            raise
     else:
         launch_args.update(min_count=launch_count, max_count=launch_count)
         reservation = ec2.run_instances(**launch_args)
@@ -629,7 +634,7 @@ def launch_cluster(cluster_name, app_name="myria", verbosity=0, **kwargs):
         # need to update instances to get public IP
         for i in instances:
             i.update()
-    except (KeyboardInterrupt, Exception) as e:
+    except:
         # If this is a new cluster, the caller is responsible for destroying it.
         if state == "resizing":
             instance_ids = [i.id for i in instances]
@@ -781,17 +786,18 @@ def wait_for_all_instances_reachable(cluster_name, region, profile=None, vpc_id=
     while True:
         ec2 = boto.ec2.connect_to_region(region, profile_name=profile)
         statuses = ec2.get_all_instance_status(instance_ids=instance_ids, include_all_instances=True)
+        available_count = 0
         for status in statuses:
-            if status.state_name != "running":
-                break
-            if status.instance_status.status != "ok":
-                break
-            if status.instance_status.details['reachability'] != "passed":
-                break
-        else: # all instances reachable, so break out of while loop
+            if (status.state_name == "running" and
+                status.instance_status.status == "ok" and
+                status.instance_status.details['reachability'] == "passed"):
+                available_count += 1
+        if available_count == len(statuses):
+            # all instances reachable, so break out of while loop
             break
         if verbosity > 0:
-            click.secho("Not all instances reachable, waiting 60 seconds...", fg='yellow')
+            click.secho("Not all instances reachable (%d/%d), waiting 60 seconds..." % (
+                available_count, len(statuses)), fg='yellow')
         sleep(60)
 
 
@@ -1643,15 +1649,18 @@ def stop_cluster(cluster_name, **kwargs):
         ec2 = boto.ec2.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
         ec2.stop_instances(instance_ids=instance_ids)
         while True:
+            stopped_count = 0
             for instance in group.instances():
                 instance.update(validate=True)
-                if instance.state != "stopped":
-                    if verbosity > 0:
-                        click.secho("Not all instances stopped, waiting 60 seconds...", fg='yellow')
-                    sleep(60)
-                    break # break out of for loop
-            else: # all instances were stopped, so break out of while loop
+                if instance.state == "stopped":
+                    stopped_count += 1
+            if stopped_count == len(group.instances()):
+                # all instances stopped, so break out of while loop
                 break
+            if verbosity > 0:
+                click.secho("Not all instances stopped (%d/%d), waiting 60 seconds..." % (
+                    stopped_count, len(group.instances())), fg='yellow')
+            sleep(60)
         # mark cluster as stopped
         group.add_tags({'state': "stopped"})
     except (KeyboardInterrupt, Exception) as e:
