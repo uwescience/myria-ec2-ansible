@@ -17,8 +17,10 @@
     - provision
 
 - name: Install myria-python dependencies
-  pip: name={{ item }}
+  pip: name={{ item }} state=latest
   with_items:
+  - pip
+  - setuptools
   - Cython
   - numpy
   - pandas
