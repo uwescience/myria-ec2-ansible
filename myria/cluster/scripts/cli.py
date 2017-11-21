@@ -1450,11 +1450,11 @@ PerfEnforce web interface:
 http://{coordinator_public_hostname}:{myria_web_port}/perfenforce
 """ if (kwargs.get('perfenforce')) else "")
 ).format(coordinator_public_hostname=coordinator_public_hostname, myria_web_port=ANSIBLE_GLOBAL_VARS['myria_web_port'],
-           myria_rest_port=ANSIBLE_GLOBAL_VARS['myria_rest_port'], ganglia_web_port=ANSIBLE_GLOBAL_VARS['ganglia_web_port'],
-           resourcemanager_web_port=ANSIBLE_GLOBAL_VARS['resourcemanager_web_port'],
-           jupyter_web_port=ANSIBLE_GLOBAL_VARS['jupyter_web_port'], private_key_file=kwargs['private_key_file'],
-           remote_user=ANSIBLE_GLOBAL_VARS['remote_user'], script_name=SCRIPT_NAME, cluster_name=cluster_name,
-           new_cluster_size=kwargs['cluster_size']+1, region=kwargs['region'], options=options_str), fg='green')
+         myria_rest_port=ANSIBLE_GLOBAL_VARS['myria_rest_port'], ganglia_web_port=ANSIBLE_GLOBAL_VARS['ganglia_web_port'],
+         resourcemanager_web_port=ANSIBLE_GLOBAL_VARS['resourcemanager_web_port'],
+         jupyter_web_port=ANSIBLE_GLOBAL_VARS['jupyter_web_port'], private_key_file=kwargs['private_key_file'],
+         remote_user=ANSIBLE_GLOBAL_VARS['remote_user'], script_name=SCRIPT_NAME, cluster_name=cluster_name,
+         new_cluster_size=kwargs['cluster_size']+1, region=kwargs['region'], options=options_str), fg='green')
 
     if click.confirm("Do you want to open the MyriaWeb interface in your browser?"):
         click.launch("http://%s:%d" % (coordinator_public_hostname, ANSIBLE_GLOBAL_VARS['myria_web_port']))
@@ -1507,6 +1507,29 @@ def login_to_node(cluster_name, **kwargs):
     sys.exit(subprocess.call(ssh_arg_str, shell=True))
 
 
+def exec_command_on_host(host, cmd, private_key_file):
+    user_host = "'%s@%s'" % (ANSIBLE_GLOBAL_VARS['remote_user'], host)
+    ssh_opts = ["ssh", "-T",
+                "-i", private_key_file,
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "UserKnownHostsFile=/dev/null"]
+    ssh_args = ssh_opts + [user_host]
+    ssh_arg_str = ' '.join(ssh_args)
+    cmdline = """
+{ssh_arg_str} 2>/dev/null <<EOF
+{cmd}
+EOF
+""".format(ssh_arg_str=ssh_arg_str, cmd=cmd)
+    return subprocess.call(cmdline, shell=True)
+
+
+def validate_log_options(ctx, param, value):
+    if value is True:
+        if ctx.params.get('system_logs') or ctx.params.get('all'):
+            raise click.BadParameter("Cannot specify both --system-logs and --all")
+    return value
+
+
 @run.command('logs')
 @click.argument('cluster_name')
 @click.option('--profile', default=None,
@@ -1515,29 +1538,80 @@ def login_to_node(cluster_name, **kwargs):
     help="AWS region your cluster was launched in")
 @click.option('--vpc-id', default=None,
     help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
-@click.option('--key-pair', show_default=True, default=DEFAULTS['key_pair'],
-    help="EC2 key pair used to launch AMI builder instance")
-@click.option('--private-key-file', callback=default_key_file_from_key_pair,
+@click.option('--private-key-file', callback=default_key_file,
     help="Private key file for your EC2 key pair [default: %s]" % ("%s/.ssh/%s-myria_%s.pem" % (HOME, USER, DEFAULTS['region'])))
+@click.option('--system-logs', is_flag=True, callback=validate_log_options,
+    help="Display only YARN daemon logs")
+@click.option('--all', is_flag=True, callback=validate_log_options,
+    help="Display both YARN container and daemon logs (only container logs are displayed by default)")
 def print_logs(cluster_name, **kwargs):
+    def get_node_ids_by_host(group):
+        node_ids_by_host = {}
+        for instance in group.instances():
+            node_ids_by_host[instance.public_dns_name] = int(instance.tags.get('node-id'))
+        return node_ids_by_host
+
+    group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+    if not group:
+        click.secho("No cluster with name '%s' exists in region '%s'." % (cluster_name, kwargs['region']), fg='red')
+        sys.exit(1)
+    node_ids_by_host = get_node_ids_by_host(group)
+    cluster_log_level = get_dict_from_cluster_metadata(group)['cluster_log_level']
     coordinator_public_hostname = get_coordinator_public_hostname(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
     if not coordinator_public_hostname:
         raise ValueError("Couldn't resolve coordinator public DNS for cluster '%s' in region '%s'" % (cluster_name, kwargs['region']))
-    user_host = "'%s@%s'" % (ANSIBLE_GLOBAL_VARS['remote_user'], coordinator_public_hostname)
-    ssh_opts = ["ssh", "-T", "-i", kwargs['private_key_file'], "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"]
-    ssh_args = ssh_opts + [user_host]
-    ssh_arg_str = ' '.join(ssh_args)
-    cmdline = """
-{ssh_arg_str} 2>/dev/null <<EOF
+    worker_public_hostnames = get_worker_public_hostnames(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+    if not worker_public_hostnames:
+        raise ValueError("Couldn't resolve workers public DNS for cluster '%s' in region '%s'" % (cluster_name, kwargs['region']))
+
+    service_logs_dir = "/var/log/upstart"
+    myria_log_path = os.path.join(service_logs_dir, "myria.log")
+    myriaweb_log_path = os.path.join(service_logs_dir, "myria-web.log")
+    hadoop_logs_dir = os.path.join(ANSIBLE_GLOBAL_VARS['default_data_dir'], "hadoop", "logs")
+    resourcemanager_log_path = os.path.join(hadoop_logs_dir, "yarn--resourcemanager*out")
+    nodemanager_log_path = os.path.join(hadoop_logs_dir, "yarn--nodemanager*out")
+    container_logs_cmdline = """
+sudo restart myria;
 while read APP_ID APP_NAME; do
     if [ "\$APP_NAME" = "MyriaDriver" ]; then
         sudo -E -u {hadoop_user} {yarn_exe} logs -applicationId "\$APP_ID" -appOwner {myria_user} 2>/dev/null
     fi
 done < <({yarn_exe} application -list -appStates FINISHED,FAILED,KILLED 2>/dev/null | awk 'FNR>=3 {{print \$1, \$2}}' | sort -rk 1,1 | head -1)
-EOF
-""".format(ssh_arg_str=ssh_arg_str, yarn_exe="%s/bin/yarn" % ANSIBLE_GLOBAL_VARS['hadoop_home'],
-           hadoop_user=ANSIBLE_GLOBAL_VARS['hadoop_user'], myria_user=ANSIBLE_GLOBAL_VARS['myria_user'])
-    sys.exit(subprocess.call(cmdline, shell=True))
+""".format(yarn_exe="%s/bin/yarn" % ANSIBLE_GLOBAL_VARS['hadoop_home'],
+           hadoop_user=ANSIBLE_GLOBAL_VARS['hadoop_user'],
+           myria_user=ANSIBLE_GLOBAL_VARS['myria_user'])
+    master_daemon_logs_cmdline = """
+printf "\nMyria service log:\n\n";
+sudo cat {myria_log_path};
+printf "\nMyriaWeb service log:\n\n";
+sudo cat {myriaweb_log_path};
+printf "\nYARN Resource Manager log:\n\n";
+sudo cat {resourcemanager_log_path};
+""".format(myria_log_path=myria_log_path,
+           myriaweb_log_path=myriaweb_log_path,
+           resourcemanager_log_path=resourcemanager_log_path)
+    slave_daemon_logs_cmdline = """
+printf "\nYARN Node Manager log:\n\n";
+sudo cat {nodemanager_log_path};
+""".format(nodemanager_log_path=nodemanager_log_path)
+    master_cmdline = ""
+    slave_cmdline = ""
+    if not kwargs['system_logs']:
+        master_cmdline += container_logs_cmdline
+    if kwargs['system_logs'] or kwargs['all']:
+        master_cmdline += master_daemon_logs_cmdline + slave_daemon_logs_cmdline
+        slave_cmdline += slave_daemon_logs_cmdline
+
+    if not kwargs['system_logs'] and not click.confirm("The Myria service must be restarted to view container logs. OK to restart?"):
+        sys.exit(1)
+    click.secho("Cluster log level is %s...\n" % cluster_log_level, fg='yellow')
+    if master_cmdline:
+        click.secho("\nLogs for coordinator:\n", fg='yellow')
+        exec_command_on_host(coordinator_public_hostname, master_cmdline, kwargs['private_key_file'])
+    if slave_cmdline:
+        for worker_public_hostname in worker_public_hostnames:
+            click.secho("\nLogs for node %d:\n" % node_ids_by_host[worker_public_hostname], fg='yellow')
+            exec_command_on_host(worker_public_hostname, slave_cmdline, kwargs['private_key_file'])
 
 
 @run.command('exec')
@@ -1555,20 +1629,8 @@ EOF
 @click.option('--command',
     help="Shell command to execute on all hosts in the cluster")
 @click.option('--node-id', type=int, default=None,
-    help="Node ID of the cluster node you want to execute the command on (all nodes by default)")
+    help="Node ID of the cluster node you want to execute the command on (0 for coordinator, all nodes by default)")
 def exec_command(cluster_name, **kwargs):
-    def exec_command_on_host(host, cmd):
-        user_host = "'%s@%s'" % (ANSIBLE_GLOBAL_VARS['remote_user'], host)
-        ssh_opts = ["ssh", "-T", "-i", kwargs['private_key_file'], "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"]
-        ssh_args = ssh_opts + [user_host]
-        ssh_arg_str = ' '.join(ssh_args)
-        cmdline = """
-{ssh_arg_str} 2>/dev/null <<EOF
-{cmd}
-EOF
-""".format(ssh_arg_str=ssh_arg_str, cmd=cmd)
-        return subprocess.call(cmdline, shell=True)
-
     group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
     if not group:
         click.secho("No cluster with name '%s' exists in region '%s'." % (cluster_name, kwargs['region']), fg='red')
@@ -1588,7 +1650,7 @@ EOF
 
     for public_ip in public_ips:
         click.secho("Executing command on %s" % public_ip, fg='green')
-        ret = exec_command_on_host(public_ip, kwargs['command'])
+        ret = exec_command_on_host(public_ip, kwargs['command'], kwargs['private_key_file'])
         if ret != 0:
             click.secho("Command exited with error %d on host %s, exiting..." % (ret, public_ip), fg='red')
             sys.exit(ret)
