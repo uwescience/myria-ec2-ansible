@@ -119,6 +119,7 @@
   command: psql --username=postgres --port=5432 --dbname=postgres --command="CREATE TABLESPACE temp_{{item.0+1}} LOCATION '/pg_temp{{item.0+1}}';"
   become: yes
   become_user: postgres
+  register: result
   failed_when: "(result | failed) and ('already exists' not in result.stderr)"
   with_indexed_items: "{{ EPHEMERAL_VOLUMES }}"
   notify: restart postgresql
@@ -130,6 +131,7 @@
   command: psql --username=postgres --port=5432 --dbname=postgres --command="CREATE TABLESPACE data_{{item.0+1}} LOCATION '/pg_data{{item.0+1}}';"
   become: yes
   become_user: postgres
+  register: result
   failed_when: "(result | failed) and ('already exists' not in result.stderr)"
   with_indexed_items: "{{ EBS_VOLUMES }}"
   notify: restart postgresql
@@ -141,6 +143,7 @@
   command: psql --username=postgres --port=5432 --dbname=postgres --command="CREATE DATABASE myria_{{item}} ENCODING '{{postgres_encoding}}' LC_COLLATE '{{postgres_locale}}' LC_CTYPE '{{postgres_locale}}' TABLESPACE temp_{{ ((((item|int)-1) % (WORKERS_PER_NODE|int)) % (EPHEMERAL_VOLUMES | length))+1 }};"
   become: yes
   become_user: postgres
+  register: result
   failed_when: "(result | failed) and ('already exists' not in result.stderr)"
   with_items: "{{ tags['worker-id'].split(',') }}"
   when: STORAGE_TYPE == 'local'
@@ -153,6 +156,7 @@
   command: psql --username=postgres --port=5432 --dbname=postgres --command="CREATE DATABASE myria_{{item}} ENCODING '{{postgres_encoding}}' LC_COLLATE '{{postgres_locale}}' LC_CTYPE '{{postgres_locale}}' TABLESPACE data_{{ ((((item|int)-1) % (WORKERS_PER_NODE|int)) % (EBS_VOLUMES | length))+1 }};"
   become: yes
   become_user: postgres
+  register: result
   failed_when: "(result | failed) and ('already exists' not in result.stderr)"
   with_items: "{{ tags['worker-id'].split(',') }}"
   when: STORAGE_TYPE == 'ebs'
