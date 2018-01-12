@@ -30,6 +30,12 @@
   tags:
     - provision
 
+- name: Replace links to demo server with localhost
+  replace: dest='{{ jupyter_notebooks_dir }}/{{ item.filename }}' regexp="{{ myria_demo_host }}" replace='localhost'
+  with_items: "{{ jupyter_sample_notebooks }}"
+  tags:
+    - provision
+
 - name: Listen on all interfaces
   lineinfile: dest={{ jupyter_config_file }} regexp="^#?\s*c.NotebookApp.ip" line="c.NotebookApp.ip = '*'" backrefs=yes state=present
   tags:

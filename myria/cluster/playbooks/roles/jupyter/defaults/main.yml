@@ -8,3 +8,4 @@ jupyter_sample_notebooks: [
   { url: 'https://raw.githubusercontent.com/uwescience/myria-python/master/ipnb%20examples/myria.ipynb', filename: 'myria_examples.ipynb' },
   # { url: 'https://raw.githubusercontent.com/uwescience/myria-python/master/ipnb%20examples/Cosmo8+Demo+Notebook.ipynb', filename: 'cosmo8_demo.ipynb' }
 ]
+myria_demo_host: 'demo.myria.cs.washington.edu'
