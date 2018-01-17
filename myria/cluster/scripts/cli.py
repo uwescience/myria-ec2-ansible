@@ -7,7 +7,7 @@ import os.path
 import stat
 import traceback
 import subprocess
-from time import sleep, strftime
+from time import sleep
 from tempfile import mkdtemp
 from collections import namedtuple
 from copy import deepcopy
@@ -28,15 +28,15 @@ from boto.exception import EC2ResponseError
 from boto.ec2.blockdevicemapping import BlockDeviceType, EBSBlockDeviceType, BlockDeviceMapping
 from boto.ec2.networkinterface import NetworkInterfaceSpecification, NetworkInterfaceCollection
 
-# disable boto logging to console
-import logging
-logging.getLogger('boto').propagate = False
-
 from myria.cluster.playbooks import playbooks_dir
 
 from distutils.spawn import find_executable
 from distutils.util import strtobool
 import pkg_resources
+
+# disable boto logging to console
+import logging
+logging.getLogger('boto').propagate = False
 
 VERSION = pkg_resources.get_distribution("myria-cluster").version
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
@@ -45,6 +45,7 @@ SCRIPT_NAME = os.path.basename(sys.argv[0])
 # we want to use only the Ansible executable in our dependent package
 ANSIBLE_EXECUTABLE_PATH = find_executable("ansible-playbook")
 
+# FIXME: this assumes there are no template expressions in this file, which is not the case!
 ANSIBLE_GLOBAL_VARS = yaml.load(file(os.path.join(playbooks_dir, "group_vars/all"), 'r'))
 MAX_RETRIES_DEFAULT = 5
 
