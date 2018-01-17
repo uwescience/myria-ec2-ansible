@@ -578,7 +578,7 @@ def launch_cluster(cluster_name, app_name="myria", verbosity=0, **kwargs):
                         break
                 if verbosity > 0:
                     click.secho("Not all spot requests fulfilled (%d/%d), waiting 60 seconds..." % (
-                        len(launched_instance_ids), len(reqs)), fg='yellow')
+                        len(launched_instance_ids), len(spot_request_ids)), fg='yellow')
                 sleep(60)
             launched_instances = ec2.get_only_instances(launched_instance_ids)
         except:
@@ -596,6 +596,7 @@ def launch_cluster(cluster_name, app_name="myria", verbosity=0, **kwargs):
         reservation = ec2.run_instances(**launch_args)
         launched_instances = reservation.instances
     try:
+        instance_ids = [i.id for i in launched_instances]
         # Tag instances
         if verbosity > 0:
             click.echo("Tagging instances...")
@@ -630,15 +631,14 @@ def launch_cluster(cluster_name, app_name="myria", verbosity=0, **kwargs):
         # poll instances for status until all are reachable
         if verbosity > 0:
             click.secho("Waiting for all instances to become reachable...", fg='yellow')
-        wait_for_all_instances_reachable(cluster_name, kwargs['region'], profile=kwargs['profile'],
-                vpc_id=kwargs['vpc_id'], verbosity=verbosity)
+        wait_for_all_instances_reachable(
+            instance_ids, kwargs['region'], profile=kwargs['profile'], verbosity=verbosity)
         # need to update instances to get public IP
         for i in instances:
             i.update()
     except:
         # If this is a new cluster, the caller is responsible for destroying it.
         if state == "resizing":
-            instance_ids = [i.id for i in instances]
             click.secho("Unexpected error, terminating new instances...", fg='red')
             if verbosity > 1:
                 click.echo("Terminating instances %s" % ', '.join(instance_ids))
@@ -779,11 +779,7 @@ def get_worker_public_hostnames(cluster_name, region, profile=None, vpc_id=None)
     return worker_hostnames
 
 
-def wait_for_all_instances_reachable(cluster_name, region, profile=None, vpc_id=None, verbosity=0):
-    group = get_security_group_for_cluster(cluster_name, region, profile=profile, vpc_id=vpc_id)
-    if not group:
-        raise ValueError("Security group '%s' not found" % cluster_name)
-    instance_ids = [instance.id for instance in group.instances()]
+def wait_for_all_instances_reachable(instance_ids, region, profile=None, verbosity=0):
     while True:
         ec2 = boto.ec2.connect_to_region(region, profile_name=profile)
         statuses = ec2.get_all_instance_status(instance_ids=instance_ids, include_all_instances=True)
@@ -793,6 +789,8 @@ def wait_for_all_instances_reachable(cluster_name, region, profile=None, vpc_id=
                 status.instance_status.status == "ok" and
                 status.instance_status.details['reachability'] == "passed"):
                 available_count += 1
+            elif status.state_name == "terminated":
+                raise ValueError("One or more instances are terminated")
         if available_count == len(statuses):
             # all instances reachable, so break out of while loop
             break
@@ -1772,8 +1770,8 @@ def start_cluster(cluster_name, **kwargs):
         ec2.start_instances(instance_ids=instance_ids)
         if verbosity > 0:
             click.secho("Waiting for started instances to become available...", fg='yellow')
-        wait_for_all_instances_reachable(cluster_name, kwargs['region'], profile=kwargs['profile'],
-            vpc_id=kwargs['vpc_id'], verbosity=verbosity)
+        wait_for_all_instances_reachable(
+            instance_ids, kwargs['region'], profile=kwargs['profile'], verbosity=verbosity)
         if verbosity > 0:
             click.secho("Waiting for Myria service to become available...", fg='yellow')
         wait_for_all_workers_online(cluster_name, kwargs['region'], profile=kwargs['profile'],
