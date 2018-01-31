@@ -957,23 +957,12 @@ No VPC found with ID '{vpc_id}' in the '{region}' region.
     return True
 
 
-def validate_region(ctx, param, value):
-    if value is not None:
-        if value not in ALL_REGIONS:
-            raise click.BadParameter("Region must be one of the following:\n%s" % '\n'.join(ALL_REGIONS))
-    return value
-
-
 def validate_instance_type(ctx, param, value):
-    if value is not None:
-        if ctx.params.get('storage_type') == "local":
-            if value not in EPHEMERAL_VOLUMES_BY_INSTANCE_TYPE:
-                raise click.BadParameter("Instance type '%s' is incompatible with local storage" % value)
-        if value in INSTANCE_TYPE_DEFAULTS:
-            ctx.params['__instance_type_config'] = INSTANCE_TYPE_DEFAULTS[value]
-    else:
-        # HACK: callback shouldn't know about default
-        value = DEFAULTS['instance_type']
+    assert value is not None
+    if ctx.params.get('storage_type') == "local":
+        if value not in EPHEMERAL_VOLUMES_BY_INSTANCE_TYPE:
+            raise click.BadParameter("Instance type '%s' is incompatible with local storage" % value)
+    if value in INSTANCE_TYPE_DEFAULTS:
         ctx.params['__instance_type_config'] = INSTANCE_TYPE_DEFAULTS[value]
     return value
 
@@ -1238,14 +1227,14 @@ def run():
     help="Install required software at deployment")
 @click.option('--profile', cls=CustomOption, default=None,
     help="AWS credential profile used to launch your cluster")
-@click.option('--region', cls=CustomOption, show_default=True, default=DEFAULTS['region'], callback=validate_region,
+@click.option('--region', cls=CustomOption, show_default=True, default=DEFAULTS['region'], type=click.Choice(ALL_REGIONS),
     help="AWS region to launch your cluster in")
 @click.option('--zone', cls=CustomOption, show_default=True, default=None,
     help="AWS availability zone to launch your cluster in")
 @click.option('--storage-type', cls=CustomOption, show_default=True, callback=validate_storage_type,
     type=click.Choice(['ebs', 'local']), default=DEFAULTS['storage_type'],
     help="Type of the block device where Myria data is stored")
-@click.option('--instance-type', cls=CustomOption, callback=validate_instance_type, is_eager=True,
+@click.option('--instance-type', cls=CustomOption, show_default=True, default=DEFAULTS['instance_type'], callback=validate_instance_type, is_eager=True,
     help="EC2 instance type for your cluster")
 @click.option('--verbose', cls=CustomOption, is_flag=True, callback=validate_console_logging)
 @click.option('--silent', cls=CustomOption, is_flag=True, callback=validate_console_logging)
@@ -1474,7 +1463,7 @@ def default_key_file(ctx, param, value):
 @click.option('--verbose', is_flag=True)
 @click.option('--profile', default=None,
     help="Boto profile used to launch your cluster")
-@click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
+@click.option('--region', show_default=True, default=DEFAULTS['region'], type=click.Choice(ALL_REGIONS),
     help="AWS region your cluster was launched in")
 @click.option('--vpc-id', default=None,
     help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
@@ -1533,7 +1522,7 @@ def validate_log_options(ctx, param, value):
 @click.argument('cluster_name')
 @click.option('--profile', default=None,
     help="Boto profile used to launch your cluster")
-@click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
+@click.option('--region', show_default=True, default=DEFAULTS['region'], type=click.Choice(ALL_REGIONS),
     help="AWS region your cluster was launched in")
 @click.option('--vpc-id', default=None,
     help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
@@ -1617,7 +1606,7 @@ sudo cat {nodemanager_log_path};
 @click.argument('cluster_name')
 @click.option('--profile', default=None,
     help="Boto profile used to launch your cluster")
-@click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
+@click.option('--region', show_default=True, default=DEFAULTS['region'], type=click.Choice(ALL_REGIONS),
     help="AWS region your cluster was launched in")
 @click.option('--vpc-id', default=None,
     help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
@@ -1660,8 +1649,8 @@ def exec_command(cluster_name, **kwargs):
 @click.option('--silent', is_flag=True)
 @click.option('--profile', default=None,
     help="Boto profile used to launch your cluster")
-@click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
-    help="AWS region to launch your cluster in")
+@click.option('--region', show_default=True, default=DEFAULTS['region'], type=click.Choice(ALL_REGIONS),
+    help="AWS region your cluster was launched in")
 @click.option('--vpc-id', default=None,
     help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
 def destroy_cluster(cluster_name, **kwargs):
@@ -1686,7 +1675,7 @@ def destroy_cluster(cluster_name, **kwargs):
 @click.option('--profile', default=None,
     help="Boto profile used to launch your cluster")
 @click.option('--region', show_default=True, default=DEFAULTS['region'],
-    help="AWS region to launch your cluster in")
+    help="AWS region your cluster was launched in")
 @click.option('--vpc-id', default=None,
     help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
 def stop_cluster(cluster_name, **kwargs):
@@ -1750,8 +1739,8 @@ You can start this cluster again by running
 @click.option('--silent', is_flag=True)
 @click.option('--profile', default=None,
     help="Boto profile used to launch your cluster")
-@click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
-    help="AWS region to launch your cluster in")
+@click.option('--region', show_default=True, default=DEFAULTS['region'], type=click.Choice(ALL_REGIONS),
+    help="AWS region your cluster was launched in")
 @click.option('--vpc-id', default=None,
     help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
 def start_cluster(cluster_name, **kwargs):
@@ -1814,7 +1803,7 @@ New public hostname of coordinator:
 @click.option('--verbose', is_flag=True)
 @click.option('--profile', default=None,
     help="Boto profile used to launch your cluster")
-@click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
+@click.option('--region', show_default=True, default=DEFAULTS['region'], type=click.Choice(ALL_REGIONS),
     help="AWS region your cluster was launched in")
 @click.option('--vpc-id', default=None,
     help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
@@ -1874,12 +1863,12 @@ def validate_list_options(ctx, param, value):
     return value
 
 
-@run.command('list')
+@run.command('describe')
 @click.argument('cluster_name', required=False)
 @click.option('--profile', default=None,
     help="Boto profile used to launch your cluster")
-@click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
-    help="AWS region to launch your cluster in")
+@click.option('--region', show_default=True, default=DEFAULTS['region'], type=click.Choice(ALL_REGIONS),
+    help="AWS region your cluster was launched in")
 @click.option('--vpc-id', default=None,
     help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
 @click.option('--metadata', is_flag=True,
@@ -1888,33 +1877,44 @@ def validate_list_options(ctx, param, value):
     help="Output public DNS name of coordinator node")
 @click.option('--workers', is_flag=True, callback=validate_list_options,
     help="Output public DNS names of worker nodes")
-def list_cluster(cluster_name, **kwargs):
+def describe_cluster(cluster_name, **kwargs):
     if not validate_aws_settings(kwargs['region'], kwargs['profile'], kwargs['vpc_id']):
         sys.exit(1)
-    if cluster_name is not None:
-        if kwargs['metadata']:
-            group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
-            md = get_dict_from_cluster_metadata(group)
-            print(json.dumps(md, sort_keys=True, indent=4, separators=(',', ': ')))
-        elif kwargs['coordinator']:
-            print(get_coordinator_public_hostname(
-                cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id']))
-        elif kwargs['workers']:
-            print('\n'.join(get_worker_public_hostnames(
-                cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])))
-        else:
-            group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
-            if not group:
-                click.secho("No cluster with name '%s' exists in region '%s'." % (cluster_name, kwargs['region']), fg='red')
-                sys.exit(1)
-            format_str = "{: <7} {: <10} {: <50}"
-            print(format_str.format('NODE_ID', 'WORKER_IDS', 'HOST'))
-            print(format_str.format('-------', '----------', '----'))
-            instances = sorted(group.instances(), key=lambda i: int(i.tags.get('node-id')))
-            for instance in instances:
-                print(format_str.format(int(instance.tags.get('node-id')), instance.tags.get('worker-id'), instance.public_dns_name))
+    if kwargs['metadata']:
+        group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+        md = get_dict_from_cluster_metadata(group)
+        print(json.dumps(md, sort_keys=True, indent=4, separators=(',', ': ')))
+    elif kwargs['coordinator']:
+        print(get_coordinator_public_hostname(
+            cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id']))
+    elif kwargs['workers']:
+        print('\n'.join(get_worker_public_hostnames(
+            cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])))
     else:
-        ec2 = boto.ec2.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
+        group = get_security_group_for_cluster(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+        if not group:
+            click.secho("No cluster with name '%s' exists in region '%s'." % (cluster_name, kwargs['region']), fg='red')
+            sys.exit(1)
+        format_str = "{: <7} {: <10} {: <50}"
+        print(format_str.format('NODE_ID', 'WORKER_IDS', 'HOST'))
+        print(format_str.format('-------', '----------', '----'))
+        instances = sorted(group.instances(), key=lambda i: int(i.tags.get('node-id')))
+        for instance in instances:
+            print(format_str.format(int(instance.tags.get('node-id')), instance.tags.get('worker-id'), instance.public_dns_name))
+
+
+@run.command('list')
+@click.option('--profile', default=None,
+    help="Boto profile used to launch your cluster")
+@click.option('--region', show_default=True, default=ALL_REGIONS, multiple=True, type=click.Choice(ALL_REGIONS),
+    help="AWS regions to search for Myria clusters")
+@click.option('--vpc-id', default=None,
+    help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
+def list_clusters(**kwargs):
+    for region in kwargs['region']:
+        if not validate_aws_settings(region, kwargs['profile'], kwargs['vpc_id']):
+            sys.exit(1)
+        ec2 = boto.ec2.connect_to_region(region, profile_name=kwargs['profile'])
         myria_groups = ec2.get_all_security_groups(filters={'tag:app': "myria"})
         groups = myria_groups
         if kwargs['vpc_id']:
@@ -1923,13 +1923,14 @@ def list_cluster(cluster_name, **kwargs):
             # In the EC2 API, filters can only express OR,
             # so we have to implement AND by intersecting results for each filter.
             groups = [g for g in myria_groups if g.id in groups_in_vpc_ids]
-        format_str = "{: <20} {: <5} {: <50} {: <10} {: <20}"
-        print(format_str.format('CLUSTER', 'NODES', 'COORDINATOR', 'STATE', 'OWNER'))
-        print(format_str.format('-------', '-----', '-----------', '-----', '-----'))
+        format_str = "{: <15} {: <20} {: <5} {: <50} {: <10} {: <20}"
+        if groups:
+            print(format_str.format('REGION', 'CLUSTER', 'NODES', 'COORDINATOR', 'STATE', 'OWNER'))
+            print(format_str.format('------', '-------', '-----', '-----------', '-----', '-----'))
         for group in groups:
             coordinator = get_coordinator_public_hostname(
-                group.name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
-            print(format_str.format(group.name, len(group.instances()), coordinator,
+                group.name, region, profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+            print(format_str.format(region, group.name, len(group.instances()), coordinator,
                   group.tags.get('state', "unknown"), group.tags.get('iam-user', "unknown")))
 
 
@@ -1946,7 +1947,7 @@ def validate_resize_command(ctx, param, value):
 @click.option('--verbose', is_flag=True)
 @click.option('--profile', default=None,
     help="Boto profile used to launch your cluster")
-@click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
+@click.option('--region', show_default=True, default=DEFAULTS['region'], type=click.Choice(ALL_REGIONS),
     help="AWS region your cluster was launched in")
 @click.option('--vpc-id', default=None,
     help="ID of the VPC (Virtual Private Cloud) used for your EC2 instances")
@@ -2094,14 +2095,6 @@ def validate_virt_type(ctx, param, value):
     return value
 
 
-def validate_regions(ctx, param, value):
-    if value is not None:
-        for region in value:
-            if region not in ALL_REGIONS:
-                raise click.BadParameter("Region must be one of the following:\n%s" % '\n'.join(ALL_REGIONS))
-    return value
-
-
 def validate_description(ctx, param, value):
     return value or ctx.params.get('ami_name')
 
@@ -2134,7 +2127,7 @@ def wait_until_image_available(ami_id, region, profile=None, verbosity=0):
     help="Boto profile used to launch AMI builder instance")
 @click.option('--instance-type', show_default=True, default=DEFAULTS['instance_type'],
     help="EC2 instance type for AMI builder instance")
-@click.option('--region', show_default=True, default=DEFAULTS['region'], callback=validate_region,
+@click.option('--region', show_default=True, default=DEFAULTS['region'], type=click.Choice(ALL_REGIONS),
     help="AWS region to launch AMI builder instance")
 @click.option('--zone', show_default=True, default=None,
     help="AWS availability zone to launch AMI builder instance in")
@@ -2152,7 +2145,7 @@ def wait_until_image_available(ami_id, region, profile=None, verbosity=0):
     help="Paravirtual virtualization type (for previous-generation EC2 instance types)")
 @click.option('--description', default=None, callback=validate_description,
     help="Description of new AMI (\"Name\" in AWS console)")
-@click.option('--copy-to-region', default=None, multiple=True, callback=validate_regions,
+@click.option('--copy-to-region', default=ALL_REGIONS, multiple=True, type=click.Choice(ALL_REGIONS),
     help="Region to copy new AMI (can be specified multiple times)")
 def create_image(ami_name, **kwargs):
     verbosity = 3 if kwargs['verbose'] else 0 if kwargs['silent'] else 1
@@ -2164,6 +2157,8 @@ def create_image(ami_name, **kwargs):
     if not create_key_pair_and_private_key_file(kwargs['key_pair'], kwargs['private_key_file'], kwargs['region'],
                                                 profile=kwargs['profile'], verbosity=verbosity):
         sys.exit(1)
+    # dedupe image creation region from copy regions
+    kwargs['copy_to_region'] = tuple([r for r in kwargs['copy_to_region'] if r != kwargs['region']])
     # abort or deregister if AMI with the same name already exists
     regions = kwargs['copy_to_region'] + (kwargs['region'],)
     for region in regions:
@@ -2294,7 +2289,7 @@ def validate_vpc_ids(ctx, param, value):
 @click.argument('ami_name')
 @click.option('--profile', default=None,
     help="Boto profile used to create AMI")
-@click.option('--region', multiple=True, callback=validate_regions,
+@click.option('--region', multiple=True, default=ALL_REGIONS, type=click.Choice(ALL_REGIONS),
     help="Region in which AMI was created (can be specified multiple times)")
 @click.option('--vpc-id', default=None, callback=validate_vpc_ids,
     help="ID of the VPC (Virtual Private Cloud) in which AMI was created (can be specified multiple times, in same order as regions)")
@@ -2334,7 +2329,7 @@ def delete_image(ami_name, **kwargs):
 @click.option('--verbose', is_flag=True)
 @click.option('--profile', default=None,
     help="Boto profile used to create AMI")
-@click.option('--region', multiple=True, callback=validate_regions,
+@click.option('--region', multiple=True, default=ALL_REGIONS, type=click.Choice(ALL_REGIONS),
     help="Region in which AMI was created (can be specified multiple times)")
 @click.option('--vpc-id', default=None, callback=validate_vpc_ids,
     help="ID of the VPC (Virtual Private Cloud) in which AMI was created (can be specified multiple times, in same order as regions)")
