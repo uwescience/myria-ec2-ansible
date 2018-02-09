@@ -30,7 +30,7 @@ setup(
         # 'click >= 6.6',
         # forked repo due to https://github.com/pallets/click/issues/730
         'click-uwescience >= 6.6',
-        'boto >= 2.40.0',
+        'boto3 >= 1.5.0',
         'PyYAML >= 3.11',
         'requests >= 2.10.0',
         'python-dateutil >= 2.6.0',

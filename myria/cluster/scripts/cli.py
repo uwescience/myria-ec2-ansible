@@ -12,7 +12,7 @@ from tempfile import mkdtemp
 from collections import namedtuple
 from copy import deepcopy
 from string import ascii_lowercase
-from operator import itemgetter, attrgetter
+from operator import itemgetter
 from math import floor, ceil
 from dateutil.parser import parse as dateparse
 import click
@@ -20,13 +20,15 @@ import yaml
 import json
 import requests
 
-import boto
-import boto.ec2
-import boto.vpc
-import boto.iam
-from boto.exception import EC2ResponseError
-from boto.ec2.blockdevicemapping import BlockDeviceType, EBSBlockDeviceType, BlockDeviceMapping
-from boto.ec2.networkinterface import NetworkInterfaceSpecification, NetworkInterfaceCollection
+import boto3
+from botocore.exceptions import ClientError
+
+# import boto.ec2
+# import boto.vpc
+# import boto.iam
+# from boto.exception import EC2ResponseError
+# from boto.ec2.blockdevicemapping import BlockDeviceType, EBSBlockDeviceType, BlockDeviceMapping
+# from boto.ec2.networkinterface import NetworkInterfaceSpecification, NetworkInterfaceCollection
 
 from myria.cluster.playbooks import playbooks_dir
 
@@ -392,7 +394,7 @@ INSTANCE_TYPE_DEFAULTS = {
 }
 
 
-SecurityGroupRule = namedtuple("SecurityGroupRule", ["ip_protocol", "from_port", "to_port", "cidr_ip", "src_group"])
+SecurityGroupRule = namedtuple("SecurityGroupRule", ["ip_protocol", "from_port", "to_port", "cidr_ip"])
 ssh_port = 22
 http_port = 80
 https_port = 443
@@ -403,15 +405,15 @@ jupyter_web_port = ANSIBLE_GLOBAL_VARS['jupyter_web_port']
 resourcemanager_web_port = ANSIBLE_GLOBAL_VARS['resourcemanager_web_port']
 nodemanager_web_port = ANSIBLE_GLOBAL_VARS['nodemanager_web_port']
 SECURITY_GROUP_RULES = [
-    SecurityGroupRule("tcp", ssh_port, ssh_port, "0.0.0.0/0", None),
-    SecurityGroupRule("tcp", http_port, http_port, "0.0.0.0/0", None),
-    SecurityGroupRule("tcp", https_port, https_port, "0.0.0.0/0", None),
-    SecurityGroupRule("tcp", myria_rest_port, myria_rest_port, "0.0.0.0/0", None),
-    SecurityGroupRule("tcp", myria_web_port, myria_web_port, "0.0.0.0/0", None),
-    SecurityGroupRule("tcp", ganglia_web_port, ganglia_web_port, "0.0.0.0/0", None),
-    SecurityGroupRule("tcp", jupyter_web_port, jupyter_web_port, "0.0.0.0/0", None),
-    SecurityGroupRule("tcp", resourcemanager_web_port, resourcemanager_web_port, "0.0.0.0/0", None),
-    SecurityGroupRule("tcp", nodemanager_web_port, nodemanager_web_port, "0.0.0.0/0", None),
+    SecurityGroupRule("tcp", ssh_port, ssh_port, "0.0.0.0/0"),
+    SecurityGroupRule("tcp", http_port, http_port, "0.0.0.0/0"),
+    SecurityGroupRule("tcp", https_port, https_port, "0.0.0.0/0"),
+    SecurityGroupRule("tcp", myria_rest_port, myria_rest_port, "0.0.0.0/0"),
+    SecurityGroupRule("tcp", myria_web_port, myria_web_port, "0.0.0.0/0"),
+    SecurityGroupRule("tcp", ganglia_web_port, ganglia_web_port, "0.0.0.0/0"),
+    SecurityGroupRule("tcp", jupyter_web_port, jupyter_web_port, "0.0.0.0/0"),
+    SecurityGroupRule("tcp", resourcemanager_web_port, resourcemanager_web_port, "0.0.0.0/0"),
+    SecurityGroupRule("tcp", nodemanager_web_port, nodemanager_web_port, "0.0.0.0/0"),
 ]
 
 
@@ -467,13 +469,13 @@ def create_key_pair_and_private_key_file(key_pair, private_key_file, region, pro
     if verbosity > 0:
         click.echo("Checking for existence/readability of private key file '%s'..." % private_key_file)
     private_key_exists = (os.path.isfile(private_key_file) and os.access(private_key_file, os.R_OK))
-    ec2 = boto.ec2.connect_to_region(region, profile_name=profile)
+    ec2 = boto3.client('ec2', region_name=region, profile_name=profile)
     try:
         if verbosity > 0:
             click.echo("Checking for existence of key pair '%s'..." % key_pair)
-        key = ec2.get_all_key_pairs(keynames=[key_pair])[0]
-    except ec2.ResponseError as e:
-        if e.code == 'InvalidKeyPair.NotFound':
+        ec2.describe_key_pairs(KeyNames=[key_pair])
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'InvalidKeyPair.NotFound':
             # Fail if key pair doesn't exist but private key file already exists
             if private_key_exists:
                 click.secho("""
@@ -483,13 +485,10 @@ Please delete or rename it, delete the key pair '{key_pair}' from the {region} r
                 return False
             if verbosity > 0:
                 click.echo("Key pair '%s' not found, creating..." % key_pair)
-            key = ec2.create_key_pair(key_pair)
+            private_key = ec2.create_key_pair(KeyName=key_pair)['KeyMaterial']
             if verbosity > 0:
                 click.echo("Saving private key for key pair '%s' to file '%s'..." % (key_pair, private_key_file))
-            key_dir = os.path.dirname(private_key_file)
-            key.save(key_dir)
-            # key.save() creates file with hardcoded name <key_pair>.pem
-            os.rename(os.path.join(key_dir, "%s.pem" % key_pair), private_key_file)
+            write_secure_file(private_key_file, private_key, mode=stat.S_IRUSR)
         else:
             raise
     else:
@@ -504,8 +503,8 @@ or 3) delete the key pair '{key_pair}' from the {region} region, and rerun the s
     return True
 
 
-def write_secure_file(path, content):
-    mode = stat.S_IRUSR | stat.S_IWUSR  # This is 0o600 in octal and 384 in decimal.
+# Default mode is 0o600 in octal and 384 in decimal.
+def write_secure_file(path, content, mode=(stat.S_IRUSR | stat.S_IWUSR)):
     umask_original = os.umask(0)
     try:
         handle = os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT, mode), 'w')
@@ -534,45 +533,50 @@ def launch_cluster(cluster_name, app_name="myria", verbosity=0, **kwargs):
     # Launch instances
     if verbosity > 0:
         click.echo("Launching instances...")
-    ec2 = boto.ec2.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
-    launch_args=dict(image_id=kwargs['ami_id'],
-                     key_name=kwargs['key_pair'],
-                     security_group_ids=[group.id],
-                     instance_type=kwargs['instance_type'],
-                     placement=kwargs['zone'],
-                     block_device_map=kwargs.get('device_mapping'),
-                     instance_profile_name=kwargs.get('role'),
-                     ebs_optimized=(kwargs.get('storage_type') == 'ebs') and (kwargs['instance_type'] in EBS_OPTIMIZED_INSTANCE_TYPES))
+    ec2 = boto3.client('ec2', region_name=kwargs['region'], profile_name=kwargs['profile'])
+    launch_args=dict(ImageId=kwargs['ami_id'],
+                     KeyName=kwargs['key_pair'],
+                     SecurityGroupIds=[group.id],
+                     InstanceType=kwargs['instance_type'],
+                     BlockDeviceMappings=kwargs.get('device_mappings'),
+                     InstanceProfileName=kwargs.get('role'),
+                     EbsOptimized=(kwargs.get('storage_type') == 'ebs') and (kwargs['instance_type'] in EBS_OPTIMIZED_INSTANCE_TYPES))
     if kwargs.get('subnet_id'):
-        interface = NetworkInterfaceSpecification(subnet_id=kwargs['subnet_id'],
-                                                  groups=[group.id],
-                                                  associate_public_ip_address=True)
-        interfaces = NetworkInterfaceCollection(interface)
-        launch_args.update(network_interfaces=interfaces, security_group_ids=None)
+        interface = dict(SubnetId=kwargs['subnet_id'],
+                         Groups=[group.id],
+                         AssociatePublicIpAddress=True)
+        launch_args.update(NetworkInterfaces=[interface], SecurityGroupIds=None)
+    if kwargs.get('role'):
+        launch_args.update(IamInstanceProfile={'Name': kwargs['role']})
+    if kwargs.get('zone'):
+        launch_args.update(Placement={'AvailabilityZone': kwargs['zone']})
     launched_instances = []
     if kwargs.get('spot_price'):
-        launched_instance_ids = []
-        launch_args.update(price=kwargs['spot_price'],
-                           count=launch_count,
-                           launch_group="launch-group-%s" % cluster_name, # fate-sharing across instances
-                           availability_zone_group="az-launch-group-%s" % cluster_name) # launch all instances in same AZ
-        spot_requests = ec2.request_spot_instances(**launch_args)
-        spot_request_ids = [req.id for req in spot_requests]
+        launch_spec = launch_args
+        launch_args = dict(LaunchSpecification=launch_spec,
+                           SpotPrice=kwargs['spot_price'],
+                           InstanceCount=launch_count,
+                           LaunchGroup="launch-group-%s" % cluster_name, # fate-sharing across instances
+                           AvailabilityZoneGroup="az-launch-group-%s" % cluster_name) # launch all instances in same AZ
+        spot_requests = ec2.request_spot_instances(**launch_args)['SpotInstanceRequests']
+        spot_request_ids = [req['SpotInstanceRequestId'] for req in spot_requests]
         try:
             while True:
                 # Spot request objects won't auto-update, so we need to fetch them again on each iteration.
                 try:
-                    reqs = ec2.get_all_spot_instance_requests(request_ids=spot_request_ids)
-                except ec2.ResponseError as e:
+                    reqs = ec2.describe_spot_instance_requests(SpotInstanceRequestIds=spot_request_ids)['SpotInstanceRequests']
+                except ClientError as e:
                     # Occasionally EC2 will not recognize a spot request ID it has just returned.
-                    if e.code == 'InvalidSpotInstanceRequestID.NotFound':
+                    if e.response['Error']['Code'] == 'InvalidSpotInstanceRequestID.NotFound':
                         pass
                     else:
                         raise
                 else:
                     for req in reqs:
-                        if req.state == "active":
-                            launched_instance_ids.append(req.instance_id)
+                        if req['State'] == 'active':
+                            launched_instance_ids.append(req['InstanceId'])
+                        elif req['State'] != 'open':
+                            raise ValueError("One or more spot requests are no longer active")
                     if len(launched_instance_ids) == len(reqs):
                         # all requests fulfilled, so break out of while loop
                         break
@@ -580,42 +584,42 @@ def launch_cluster(cluster_name, app_name="myria", verbosity=0, **kwargs):
                     click.secho("Not all spot requests fulfilled (%d/%d), waiting 60 seconds..." % (
                         len(launched_instance_ids), len(spot_request_ids)), fg='yellow')
                 sleep(60)
-            launched_instances = ec2.get_only_instances(launched_instance_ids)
+            launched_instances = ec2.describe_instances(InstanceIds=launched_instance_ids)['Reservations'][0]['Instances']
         except:
             if verbosity > 0:
                 click.secho("Unexpected error, cancelling spot instance requests...", fg='red')
             if verbosity > 1:
                 click.echo("Terminating spot requests %s" % ', '.join(spot_request_ids))
             try:
-                ec2.cancel_spot_instance_requests(spot_request_ids)
+                ec2.cancel_spot_instance_requests(SpotInstanceRequestIds=spot_request_ids)
             except:
                 pass # best-effort
             raise
     else:
-        launch_args.update(min_count=launch_count, max_count=launch_count)
-        reservation = ec2.run_instances(**launch_args)
-        launched_instances = reservation.instances
+        launch_args.update(MinCount=launch_count, MaxCount=launch_count)
+        launched_instances = ec2.run_instances(**launch_args)['Instances']
     try:
-        instance_ids = [i.id for i in launched_instances]
+        # We need to sort instances in a stable order that increases with time,
+        # so worker IDs are stable and increase when new instances are launched.
+        sorted_instances = sorted(launched_instances, key=itemgetter('AmiLaunchIndex'))
+        instance_ids = [i['InstanceId'] for i in sorted_instances]
         # Tag instances
         if verbosity > 0:
             click.echo("Tagging instances...")
-        # We need to sort instances in a stable order that increases with time,
-        # so worker IDs are stable and increase when new instances are launched.
-        instances = sorted(launched_instances, key=attrgetter('ami_launch_index'))
-        for idx, instance in enumerate(instances):
+        for idx, instance_id in enumerate(instance_ids):
             instance_tags = {'app': app_name, 'cluster-name': cluster_name}
             if kwargs.get('iam_user'):
                 instance_tags.update({'user:Name': kwargs['iam_user']})
             if kwargs.get('spot_price'):
                 instance_tags.update({'spot-price': kwargs['spot_price']})
             # Tag volumes
-            volumes = ec2.get_all_volumes(filters={'attachment.instance-id': instance.id})
+            volumes = ec2.describe_volumes(Filters=[{'Name': "attachment.instance-id", 'Values': [instance_id]}])['Volumes']
             for volume in volumes:
                 volume_tags = {'app': app_name, 'cluster-name': cluster_name}
                 if kwargs.get('iam_user'):
                     volume_tags.update({'user:Name': kwargs['iam_user']})
-                volume.add_tags(volume_tags)
+                raw_tags = [dict(Key=k, Value=v) for k, v in volume_tags.iteritems()]
+                ec2.create_tags(Resources=[volume['VolumeId']], Tags=raw_tags)
             cluster_idx = current_cluster_size + idx
             # HACK: we zero-pad the `node-id` tag so we can alphabetically sort on it in Ansible (numeric sort is too difficult).
             instance_tags.update({'node-id': "%03d" % cluster_idx})
@@ -627,15 +631,13 @@ def launch_cluster(cluster_name, app_name="myria", verbosity=0, **kwargs):
                 instance_name_tag = "%s-worker-%d-%d" % (cluster_name, ((cluster_idx - 1) * kwargs['workers_per_node']) + 1, cluster_idx * kwargs['workers_per_node'])
                 worker_id_tag = ','.join(map(str, range(((cluster_idx - 1) * kwargs['workers_per_node']) + 1, (cluster_idx  * kwargs['workers_per_node']) + 1)))
                 instance_tags.update({'Name': instance_name_tag, 'cluster-role': "worker", 'worker-id': worker_id_tag})
-            instance.add_tags(instance_tags)
+            raw_tags = [dict(Key=k, Value=v) for k, v in instance_tags.iteritems()]
+            ec2.create_tags(Resources=[instance_id], Tags=raw_tags)
         # poll instances for status until all are reachable
         if verbosity > 0:
             click.secho("Waiting for all instances to become reachable...", fg='yellow')
         wait_for_all_instances_reachable(
             instance_ids, kwargs['region'], profile=kwargs['profile'], verbosity=verbosity)
-        # need to update instances to get public IP
-        for i in instances:
-            i.update()
     except:
         # If this is a new cluster, the caller is responsible for destroying it.
         if state == "resizing":
@@ -644,24 +646,23 @@ def launch_cluster(cluster_name, app_name="myria", verbosity=0, **kwargs):
                 click.echo("Terminating instances %s" % ', '.join(instance_ids))
             terminate_instances(kwargs['region'], instance_ids, profile=kwargs['profile'])
         raise
-
     # NB: callers that launch new instances in existing clusters are responsible for updating cluster size metadata!
-    return instances
+    return instance_ids
 
 
 def get_security_group_for_cluster(cluster_name, region, profile=None, vpc_id=None):
-    ec2 = boto.ec2.connect_to_region(region, profile_name=profile)
+    ec2 = boto3.client('ec2', region_name=region, profile_name=profile)
     groups = []
     if vpc_id:
         # In the EC2 API, filters can only express OR,
         # so we have to implement AND by intersecting results for each filter.
-        groups_in_vpc = ec2.get_all_security_groups(filters={'vpc-id': vpc_id})
-        groups = [g for g in groups_in_vpc if g.name == cluster_name]
+        groups_in_vpc = ec2.describe_security_groups(Filters={'Name': 'vpc-id', 'Values': [vpc_id]})['SecurityGroups']
+        groups = [g for g in groups_in_vpc if g['GroupName'] == cluster_name]
     else:
         try:
-            groups = ec2.get_all_security_groups(groupnames=cluster_name)
-        except ec2.ResponseError as e:
-            if e.code == 'InvalidGroup.NotFound':
+            groups = ec2.describe_security_groups(Filters={'Name': 'group-name', 'Values': [cluster_name]})['SecurityGroups']
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'InvalidGroup.NotFound':
                 return None
             else:
                 raise
@@ -674,14 +675,14 @@ def get_security_group_for_cluster(cluster_name, region, profile=None, vpc_id=No
 def create_security_group_for_cluster(cluster_name, app_name="myria", verbosity=0, **kwargs):
     if verbosity > 0:
         click.echo("Creating security group '%s' in region '%s'..." % (cluster_name, kwargs['region']))
-    ec2 = boto.ec2.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
-    group = ec2.create_security_group(cluster_name, "Myria security group", vpc_id=kwargs['vpc_id'])
+    ec2 = boto3.client('ec2', region_name=region, profile_name=profile)
+    group_id = ec2.create_security_group(GroupName=cluster_name, Description="Myria security group", VpcId=kwargs['vpc_id'])['GroupId']
     # We need to poll for availability after creation since as usual AWS is eventually consistent
     while True:
         try:
-            ec2.get_all_security_groups(group_ids=[group.id])[0]
-        except ec2.ResponseError as e:
-            if e.code == 'InvalidGroup.NotFound':
+            ec2.describe_security_groups(GroupIds=[group_id])
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'InvalidGroup.NotFound':
                 if verbosity > 0:
                     click.secho("Waiting for security group '%s' in region '%s' to become available..." % (cluster_name, kwargs['region']), fg='yellow')
                 sleep(5)
@@ -696,18 +697,20 @@ def create_security_group_for_cluster(cluster_name, app_name="myria", verbosity=
     # Tag security group with all command-line arguments so we can provision future instances identically
     arg_tags = get_cluster_metadata_tags_from_dict(kwargs)
     group_tags.update(arg_tags)
-    group.add_tags(group_tags)
+    raw_tags = [dict(Key=k, Value=v) for k, v in group_tags.iteritems()]
+    ec2.create_tags(Resources=[group_id], Tags=raw_tags)
     # Allow this group complete access to itself
-    self_rules = [SecurityGroupRule(proto, 0, 65535, "0.0.0.0/0", group) for proto in ['tcp', 'udp']]
-    rules = self_rules + SECURITY_GROUP_RULES
+    ec2.authorize_security_group_ingress(GroupId=group_id, SourceSecurityGroupName=cluster_name)
     # Add security group rules
-    for rule in rules:
-        group.authorize(ip_protocol=rule.ip_protocol,
-                        from_port=rule.from_port,
-                        to_port=rule.to_port,
-                        cidr_ip=rule.cidr_ip,
-                        src_group=rule.src_group)
-    return group
+    for rule in SECURITY_GROUP_RULES:
+        ec2.authorize_security_group_ingress(
+            GroupId=group_id,
+            IpProtocol=rule.ip_protocol,
+            FromPort=rule.from_port,
+            ToPort=rule.to_port,
+            CidrIp=rule.cidr_ip,
+        )
+    return group_id
 
 
 def terminate_cluster(cluster_name, region, profile=None, vpc_id=None):
@@ -826,6 +829,13 @@ def wait_for_all_workers_online(cluster_name, region, profile=None, vpc_id=None,
                 raise MyriaError("Error response from Myria service (status code %d):\n%s" % (
                     workers_resp.status_code, workers_resp.text))
         sleep(60)
+
+
+def update_cluster_state(cluster_name, state, region, profile=None, vpc_id=None, verbosity=0):
+    assert state in ['initializing', 'running', 'stopped', 'resizing', 'updating']
+    group_id = get_security_group_for_cluster(cluster_name, region, profile=None, vpc_id=None)['GroupId']
+    ec2 = boto3.client('ec2', region_name=region, profile_name=profile)
+    ec2.create_tags(Resources=[group_id], Tags=[{'Key': 'state', 'Value': state}])
 
 
 def instance_type_family_from_instance_type(instance_type):
@@ -1136,29 +1146,28 @@ def get_iam_user(region, profile=None, verbosity=0):
     return iam_user
 
 
-def get_block_device_mapping(**kwargs):
-    # Create block device mapping
-    device_mapping = BlockDeviceMapping()
+def get_block_device_mappings(**kwargs):
+    device_mappings = []
     # Generate all local volume mappings
     num_local_volumes = EPHEMERAL_VOLUMES_BY_INSTANCE_TYPE.get(kwargs['instance_type'], 0)
     for local_dev_idx in xrange(num_local_volumes):
-        local_dev = BlockDeviceType()
-        local_dev.ephemeral_name = "%s%d" % ("ephemeral", local_dev_idx)
+        ephemeral_name = "%s%d" % ("ephemeral", local_dev_idx)
         local_dev_letter = ascii_lowercase[1+local_dev_idx]
         local_dev_name = "%s%s" % (DEVICE_PATH_PREFIX, local_dev_letter)
-        device_mapping[local_dev_name] = local_dev
+        local_dev = dict(DeviceName=local_dev_name, VirtualName=ephemeral_name)
+        device_mappings.append(local_dev)
     # Generate all EBS volume mappings
     for ebs_dev_idx in xrange(kwargs['data_volume_count']):
-        ebs_dev = EBSBlockDeviceType()
-        ebs_dev.size = kwargs['data_volume_size_gb']
-        ebs_dev.delete_on_termination = True
-        ebs_dev.volume_type = kwargs['data_volume_type']
-        ebs_dev.iops = kwargs['data_volume_iops']
         # We always have one root volume and 0 to 4 ephemeral volumes.
         ebs_dev_letter = ascii_lowercase[1+num_local_volumes+ebs_dev_idx]
         ebs_dev_name = "%s%s" % (DEVICE_PATH_PREFIX, ebs_dev_letter)
-        device_mapping[ebs_dev_name] = ebs_dev
-    return device_mapping
+        ebs_dev = dict(DeviceName=ebs_dev_name,
+                       VolumeSize=kwargs['data_volume_size_gb'],
+                       DeleteOnTermination=True,
+                       VolumeType=kwargs['data_volume_type'],
+                       Iops=kwargs['data_volume_iops'])
+        device_mappings.append(ebs_dev)
+    return device_mappings
 
 
 def run_playbook(playbook, private_key_file, extra_vars={}, tags=[], limit_hosts=[], max_retries=MAX_RETRIES_DEFAULT, verbosity=0):
@@ -1332,7 +1341,7 @@ def create_cluster(ctx, cluster_name, **kwargs):
     """.format(script_name=SCRIPT_NAME, cluster_name=cluster_name, region=kwargs['region'], options=options_str), fg='red')
             sys.exit(1)
 
-        device_mapping = get_block_device_mapping(**kwargs)
+        device_mappings = get_block_device_mappings(**kwargs)
         # We need to massage opaque BlockDeviceType objects into dicts we can pass to Ansible
         all_volumes = [dict(v.__dict__.iteritems(), device_name=k) for k, v in sorted(device_mapping.iteritems(), key=itemgetter(0))]
         # we need to special-case local-only because of list slicing behavior with index "-0"
@@ -1345,9 +1354,9 @@ def create_cluster(ctx, cluster_name, **kwargs):
             sys.exit(1)
 
         # create security group and apply tags
-        group = create_security_group_for_cluster(cluster_name, verbosity=verbosity, **kwargs)
+        group_id = create_security_group_for_cluster(cluster_name, verbosity=verbosity, **kwargs)
         # launch all instances in this cluster
-        launch_cluster(cluster_name, device_mapping=device_mapping, verbosity=verbosity, **kwargs)
+        launch_cluster(cluster_name, device_mappings=device_mappings, verbosity=verbosity, **kwargs)
 
         # run remote playbook to provision EC2 instances
         extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None and not k.startswith('__'))
@@ -1373,7 +1382,8 @@ def create_cluster(ctx, cluster_name, **kwargs):
         wait_for_all_workers_online(cluster_name, kwargs['region'], profile=kwargs['profile'],
             vpc_id=kwargs['vpc_id'], verbosity=verbosity)
         # mark cluster as running
-        group.add_tags({'state': "running"})
+        update_cluster_state(cluster_name, 'running', region=kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
+
         coordinator_public_hostname = get_coordinator_public_hostname(cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
         if not coordinator_public_hostname:
             raise ValueError("Couldn't resolve coordinator public DNS for cluster '%s'" % cluster_name)
@@ -1723,7 +1733,7 @@ def stop_cluster(cluster_name, **kwargs):
                     stopped_count, len(group.instances())), fg='yellow')
             sleep(60)
         # mark cluster as stopped
-        group.add_tags({'state': "stopped"})
+        update_cluster_state(cluster_name, 'stopped', region=kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
     except (KeyboardInterrupt, Exception) as e:
         if verbosity > 0:
             click.secho(str(e), fg='red')
@@ -1777,7 +1787,7 @@ def start_cluster(cluster_name, **kwargs):
         wait_for_all_workers_online(cluster_name, kwargs['region'], profile=kwargs['profile'],
             vpc_id=kwargs['vpc_id'], verbosity=verbosity)
         # mark cluster as running
-        group.add_tags({'state': "running"})
+        update_cluster_state(cluster_name, 'running', region=kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
         coordinator_public_hostname = get_coordinator_public_hostname(
             cluster_name, kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
         if not coordinator_public_hostname:
@@ -1840,7 +1850,7 @@ def update_cluster(cluster_name, **kwargs):
                 click.echo("%s: %s" % (k, v))
 
         # mark cluster as updating
-        group.add_tags({'state': "updating"})
+        update_cluster_state(cluster_name, 'updating', region=kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
 
         # run remote playbook to update software on EC2 instances
         click.echo("Updating Myria software on cluster...")
@@ -1852,7 +1862,7 @@ def update_cluster(cluster_name, **kwargs):
         click.secho("Myria software successfully updated.", fg='green')
 
         # mark cluster as running
-        group.add_tags({'state': "running"})
+        update_cluster_state(cluster_name, 'running', region=kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
 
     except (KeyboardInterrupt, Exception) as e:
         if verbosity > 0:
@@ -1968,7 +1978,7 @@ def resize_cluster(cluster_name, **kwargs):
         if not group:
             raise ValueError("No cluster with name '%s' exists in region '%s'." % (cluster_name, kwargs['region']))
         # mark cluster as resizing
-        group.add_tags({'state': "resizing"})
+        update_cluster_state(cluster_name, 'resizing', region=kwargs['region'], profile=kwargs['profile'], vpc_id=kwargs['vpc_id'])
         iam_user = get_iam_user(kwargs['region'], profile=kwargs['profile'], verbosity=verbosity)
         kwargs['iam_user'] = iam_user
 
@@ -1983,7 +1993,7 @@ def resize_cluster(cluster_name, **kwargs):
         # overwrite parameter to launch_cluster() with desired cluster size
         kwargs.update(cluster_size=target_cluster_size)
 
-        device_mapping = get_block_device_mapping(**kwargs)
+        device_mappings = get_block_device_mappings(**kwargs)
         # We need to massage opaque BlockDeviceType objects into dicts we can pass to Ansible
         all_volumes = [dict(v.__dict__.iteritems(), device_name=k) for k, v in sorted(device_mapping.iteritems(), key=itemgetter(0))]
         # we need to special-case local-only because of list slicing behavior with index "-0"
@@ -1991,7 +2001,7 @@ def resize_cluster(cluster_name, **kwargs):
         ebs_volumes = [] if kwargs['storage_type'] == 'local' else all_volumes[-kwargs['data_volume_count']:]
 
         # launch the new instances
-        instances = launch_cluster(cluster_name, device_mapping=device_mapping, verbosity=verbosity, **kwargs)
+        launched_instance_ids = launch_cluster(cluster_name, device_mappings=device_mappings, verbosity=verbosity, **kwargs)
     except (KeyboardInterrupt, Exception) as e:
         if verbosity > 0:
             click.secho(str(e), fg='red')
@@ -2001,9 +2011,10 @@ def resize_cluster(cluster_name, **kwargs):
         click.secho("Unexpected error, exiting...", fg='red')
         sys.exit(1)
 
-    instance_ids = [i.id for i in instances]
     try:
         ec2 = boto.ec2.connect_to_region(kwargs['region'], profile_name=kwargs['profile'])
+        launched_instances = ec2.describe_instances(InstanceIds=launched_instance_ids)['Reservations'][0]['Instances']
+        launched_public_ips = [i['PublicIpAddress'] for i in launched_instances]
 
         # run remote playbook to provision EC2 instances
         extra_vars = dict((k.upper(), v) for k, v in kwargs.iteritems() if v is not None)
@@ -2017,11 +2028,11 @@ def resize_cluster(cluster_name, **kwargs):
 
         # provision new instances
         tags = ['provision', 'configure'] if kwargs['unprovisioned'] else ['configure']
-        if not run_playbook("remote.yml", kwargs['private_key_file'], extra_vars=extra_vars, tags=tags, limit_hosts=[i.ip_address for i in instances], verbosity=verbosity):
+        if not run_playbook("remote.yml", kwargs['private_key_file'], extra_vars=extra_vars, tags=tags, limit_hosts=launched_public_ips, verbosity=verbosity):
             click.secho("Failed to provision new instances, terminating...", fg='red')
             if verbosity > 1:
-                click.echo("Terminating instances %s" % ', '.join(instance_ids))
-            terminate_instances(kwargs['region'], instance_ids, profile=kwargs['profile'])
+                click.echo("Terminating instances %s" % ', '.join(launched_instance_ids))
+            terminate_instances(kwargs['region'], launched_instance_ids, profile=kwargs['profile'])
             sys.exit(1)
 
         # update configuration on coordinator
@@ -2051,8 +2062,8 @@ Please refer to the error message above for diagnosis. Exiting (not terminating 
             click.secho(traceback.format_exc(), fg='red')
         click.secho("Unexpected error, terminating new instances...", fg='red')
         if verbosity > 1:
-            click.echo("Terminating instances %s" % ', '.join(instance_ids))
-        terminate_instances(kwargs['region'], instance_ids, profile=kwargs['profile'])
+            click.echo("Terminating instances %s" % ', '.join(launched_instance_ids))
+        terminate_instances(kwargs['region'], launched_instance_ids, profile=kwargs['profile'])
         sys.exit(1)
 
     click.secho("%d new nodes successfully added to cluster '%s'." % (target_cluster_size - current_cluster_size, cluster_name), fg='green')
